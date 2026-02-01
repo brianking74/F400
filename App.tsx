@@ -57,7 +57,6 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkKeyAndCache = async () => {
-      // 1. Try to load from cache first
       const cachedVideo = await getAsset('heroVideo');
       const cachedHeroImg = await getAsset('heroImage');
       const cachedHistoryImg = await getAsset('historyImage');
@@ -76,7 +75,6 @@ const App: React.FC = () => {
         return;
       }
 
-      // 2. If not in cache, check API key
       const hasKey = await (window as any).aistudio.hasSelectedApiKey();
       if (!hasKey) {
         setNeedsKey(true);
@@ -128,7 +126,7 @@ const App: React.FC = () => {
         setLoadingStep('Initializing Cinematic Video Generation (Veo 3.1)...');
         let operation = await ai.models.generateVideos({
           model: 'veo-3.1-fast-generate-preview',
-          prompt: 'A cinematic high-quality video of a classic red 1977 Ferrari 400 grand tourer, sharp angular wedge design, cruising on a scenic Italian coastal road at sunset. The car has a distinctive long flat profile and quad round taillights. 1080p resolution, professional automotive cinematography, smooth tracking shot.',
+          prompt: 'A cinematic one-take shot of a red 1977 Ferrari 400 driving in a single, unwavering direction along a straight scenic road. The camera is stationary on the roadside. The car starts in the distance, driving towards the camera. As the car passes the camera, the right side of the car glides gracefully past the lens. The camera smoothly pivots 180 degrees to follow the car from behind as it continues away in exactly the same direction. One continuous take, no cuts, no direction changes, showing the front, then strictly the right side, then the rear as it accelerates away. High-quality 1080p.',
           config: {
             numberOfVideos: 1,
             resolution: '1080p',
@@ -146,7 +144,7 @@ const App: React.FC = () => {
         if (downloadLink) {
           const response = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
           const blob = await response.blob();
-          await saveAsset('heroVideo', blob); // Cache the blob
+          await saveAsset('heroVideo', blob);
           return URL.createObjectURL(blob);
         }
         return null;
@@ -157,7 +155,6 @@ const App: React.FC = () => {
     };
 
     try {
-      // Parallelize where possible, but manage quota
       const videoTask = generateVideo();
 
       setLoadingStep('Capturing Hero Profile: Ferrari 400 Series');
@@ -251,7 +248,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen" id="top">
       <Header />
       <main>
         <Hero customImage={heroImage} videoUrl={heroVideo} />
@@ -268,7 +265,6 @@ const App: React.FC = () => {
         ↑
       </button>
       
-      {/* Optional: Hidden clear cache feature for dev/testing */}
       <div 
         className="fixed bottom-4 left-4 opacity-0 hover:opacity-10 cursor-pointer text-[10px] text-white"
         onClick={() => { indexedDB.deleteDatabase(DB_NAME); window.location.reload(); }}

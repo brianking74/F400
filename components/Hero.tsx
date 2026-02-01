@@ -8,6 +8,20 @@ interface HeroProps {
 }
 
 const Hero: React.FC<HeroProps> = ({ customImage, videoUrl }) => {
+  const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    e.preventDefault();
+    const element = document.querySelector(href);
+    if (element) {
+      const offset = 80;
+      const elementPosition = element.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.pageYOffset - offset;
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
+    }
+  };
+
   return (
     <header className="relative h-screen w-full overflow-hidden flex items-center justify-center">
       <div className="absolute inset-0 z-0">
@@ -43,12 +57,14 @@ const Hero: React.FC<HeroProps> = ({ customImage, videoUrl }) => {
         <div className="flex flex-col sm:flex-row gap-4 justify-center opacity-0 animate-[fade-in-up_1s_ease-out_0.9s_forwards]">
           <a 
             href="#history" 
+            onClick={(e) => scrollToSection(e, '#history')}
             className="px-10 py-4 bg-rosso text-white font-semibold uppercase tracking-widest hover:bg-red-700 transition-all transform hover:scale-105 shadow-xl"
           >
             Discover the Legacy
           </a>
           <a 
             href="#gallery" 
+            onClick={(e) => scrollToSection(e, '#gallery')}
             className="px-10 py-4 border border-white text-white font-semibold uppercase tracking-widest hover:bg-white hover:text-black transition-all transform"
           >
             View Gallery
@@ -56,7 +72,18 @@ const Hero: React.FC<HeroProps> = ({ customImage, videoUrl }) => {
         </div>
       </div>
 
-      <div className="absolute bottom-10 left-1/2 -translate-x-1/2 animate-bounce cursor-pointer z-10" onClick={() => document.getElementById('history')?.scrollIntoView({ behavior: 'smooth' })}>
+      <div 
+        className="absolute bottom-10 left-1/2 -translate-x-1/2 animate-bounce cursor-pointer z-10" 
+        onClick={() => {
+          const element = document.getElementById('history');
+          if (element) {
+            const offset = 80;
+            const elementPosition = element.getBoundingClientRect().top;
+            const offsetPosition = elementPosition + window.pageYOffset - offset;
+            window.scrollTo({ top: offsetPosition, behavior: 'smooth' });
+          }
+        }}
+      >
         <ChevronDown size={32} className="text-white/50 hover:text-rosso transition-colors" />
       </div>
 

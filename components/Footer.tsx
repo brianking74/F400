@@ -3,6 +3,24 @@ import React from 'react';
 import { Facebook, Instagram, Twitter, Mail } from 'lucide-react';
 
 const Footer: React.FC = () => {
+  const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    e.preventDefault();
+    if (href === '#top') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    const element = document.querySelector(href);
+    if (element) {
+      const offset = 80;
+      const elementPosition = element.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.pageYOffset - offset;
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
+    }
+  };
+
   return (
     <footer className="bg-black text-white py-20">
       <div className="max-w-7xl mx-auto px-6">
@@ -17,10 +35,10 @@ const Footer: React.FC = () => {
           <div>
             <h4 className="uppercase tracking-widest text-sm font-bold mb-6">Explore</h4>
             <ul className="space-y-4 text-gray-400">
-              <li><a href="#history" className="hover:text-rosso transition-colors">Heritage</a></li>
-              <li><a href="#versions" className="hover:text-rosso transition-colors">The Models</a></li>
-              <li><a href="#owners" className="hover:text-rosso transition-colors">Collectors</a></li>
-              <li><a href="#gallery" className="hover:text-rosso transition-colors">Visual Archive</a></li>
+              <li><a href="#history" onClick={(e) => scrollToSection(e, '#history')} className="hover:text-rosso transition-colors">Heritage</a></li>
+              <li><a href="#versions" onClick={(e) => scrollToSection(e, '#versions')} className="hover:text-rosso transition-colors">The Models</a></li>
+              <li><a href="#owners" onClick={(e) => scrollToSection(e, '#owners')} className="hover:text-rosso transition-colors">Collectors</a></li>
+              <li><a href="#gallery" onClick={(e) => scrollToSection(e, '#gallery')} className="hover:text-rosso transition-colors">Visual Archive</a></li>
             </ul>
           </div>
 

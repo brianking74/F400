@@ -14,6 +14,28 @@ const Header: React.FC = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+    e.preventDefault();
+    setMobileMenuOpen(false);
+    
+    if (href === '#top') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    const element = document.querySelector(href);
+    if (element) {
+      const offset = 80; // Approximate height of the sticky header
+      const elementPosition = element.getBoundingClientRect().top;
+      const offsetPosition = elementPosition + window.pageYOffset - offset;
+
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
+    }
+  };
+
   const navLinks = [
     { name: 'Heritage', href: '#history' },
     { name: 'Versions', href: '#versions' },
@@ -24,9 +46,13 @@ const Header: React.FC = () => {
   return (
     <nav className={`fixed w-full z-50 transition-all duration-300 ${isScrolled ? 'bg-black/95 py-4 shadow-lg' : 'bg-transparent py-8'}`}>
       <div className="max-w-7xl mx-auto px-6 flex justify-between items-center">
-        <a href="#" className="flex items-center space-x-2 group">
+        <a 
+          href="#top" 
+          onClick={(e) => scrollToSection(e, '#top')}
+          className="flex items-center space-x-2 group"
+        >
           <span className="text-3xl font-serif font-bold text-rosso group-hover:scale-110 transition-transform">F400</span>
-          <span className={`text-xs uppercase tracking-[0.4em] font-light hidden sm:block ${isScrolled ? 'text-white' : 'text-white'}`}>
+          <span className={`text-xs uppercase tracking-[0.4em] font-light hidden sm:block text-white`}>
             Homage
           </span>
         </a>
@@ -37,6 +63,7 @@ const Header: React.FC = () => {
             <a
               key={link.name}
               href={link.href}
+              onClick={(e) => scrollToSection(e, link.href)}
               className="text-white text-sm uppercase tracking-widest hover:text-rosso transition-colors duration-200"
             >
               {link.name}
@@ -58,7 +85,7 @@ const Header: React.FC = () => {
               <a
                 key={link.name}
                 href={link.href}
-                onClick={() => setMobileMenuOpen(false)}
+                onClick={(e) => scrollToSection(e, link.href)}
                 className="text-white text-lg uppercase tracking-widest hover:text-rosso transition-colors"
               >
                 {link.name}
