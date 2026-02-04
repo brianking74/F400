@@ -27,29 +27,40 @@ const History: React.FC<HistoryProps> = ({ customImage }) => {
               "The 400 marked a turning point in Maranello: the first Ferrari ever to offer a factory automatic transmission."
             </div>
             <p>
-              This bold move catered to the growing luxury market, particularly in the United States, providing effortless power without sacrificing the soul of a Ferrari. Only ~502 units were produced during its initial run, making it a rare gem in the Ferrari lineage.
+              This bold move catered to the growing luxury market, particularly in the United States, providing effortless power without sacrificing the soul of a Ferrari.
             </p>
           </div>
 
           <div className="relative group">
-            <div className="absolute -inset-4 border-2 border-rosso/20 group-hover:border-rosso/40 transition-colors pointer-events-none"></div>
-            <img 
-              src={customImage || "https://images.unsplash.com/photo-1627454820516-dc767abc433a?auto=format&fit=crop&q=80&w=1000"} 
-              alt="Ferrari 400 Front Profile" 
-              className="w-full shadow-2xl relative z-10 bg-gray-100 min-h-[400px] object-cover"
-            />
-            <div className="mt-8 grid grid-cols-3 gap-4">
-              <div className="text-center">
-                <p className="text-rosso font-serif text-3xl font-bold">4823</p>
-                <p className="text-xs uppercase tracking-widest text-gray-500">cc Capacity</p>
+            <div className="relative p-4 md:p-8 bg-white shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-gray-100">
+              <div className="aspect-[4/3] w-full overflow-hidden bg-neutral-900 flex items-center justify-center relative">
+                {customImage ? (
+                  <img 
+                    src={customImage} 
+                    alt="Ferrari 400 Heritage" 
+                    className="w-full h-full object-contain animate-in fade-in duration-1000"
+                  />
+                ) : (
+                  <div className="text-center opacity-20">
+                    <div className="w-12 h-[1px] bg-white mx-auto mb-4"></div>
+                    <p className="text-[9px] uppercase tracking-[0.4em] text-white font-bold italic">Archival Plate 400.01</p>
+                  </div>
+                )}
               </div>
-              <div className="text-center">
-                <p className="text-rosso font-serif text-3xl font-bold">340</p>
-                <p className="text-xs uppercase tracking-widest text-gray-500">Horsepower</p>
-              </div>
-              <div className="text-center">
-                <p className="text-rosso font-serif text-3xl font-bold">1976</p>
-                <p className="text-xs uppercase tracking-widest text-gray-500">Launch Year</p>
+              
+              <div className="mt-10 grid grid-cols-3 gap-4 border-t border-gray-100 pt-8">
+                <div className="text-center">
+                  <p className="text-rosso font-serif text-3xl font-bold">4823</p>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500 mt-1">cc Capacity</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-rosso font-serif text-3xl font-bold">340</p>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500 mt-1">Horsepower</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-rosso font-serif text-3xl font-bold">1976</p>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500 mt-1">Launch Year</p>
+                </div>
               </div>
             </div>
           </div>

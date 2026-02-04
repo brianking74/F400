@@ -9,7 +9,6 @@ interface GalleryProps {
 
 const Gallery: React.FC<GalleryProps> = ({ images = [] }) => {
   const [filter, setFilter] = useState<'All' | 'Exterior' | 'Interior' | 'Details'>('All');
-
   const categories: ('All' | 'Exterior' | 'Interior' | 'Details')[] = ['All', 'Exterior', 'Interior', 'Details'];
 
   const filteredImages = filter === 'All' 
@@ -39,17 +38,17 @@ const Gallery: React.FC<GalleryProps> = ({ images = [] }) => {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredImages.map((img) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 min-h-[400px]">
+          {filteredImages.length > 0 ? filteredImages.map((img) => (
             <div 
               key={img.id} 
-              className="relative group aspect-[4/3] overflow-hidden bg-gray-100 cursor-pointer border border-gray-100 shadow-sm"
+              className="relative group aspect-[4/3] overflow-hidden bg-neutral-900 cursor-pointer border border-gray-100 shadow-sm animate-in zoom-in duration-500"
               onClick={() => setSelectedImageId(img.id)}
             >
               <img 
                 src={img.url} 
                 alt={img.caption}
-                className="w-full h-full object-cover grayscale-[10%] group-hover:grayscale-0 group-hover:scale-105 transition-all duration-700"
+                className="w-full h-full object-cover transition-all duration-1000"
               />
               <div className="absolute inset-0 bg-rosso/0 group-hover:bg-rosso/10 transition-all duration-300"></div>
               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
@@ -61,12 +60,18 @@ const Gallery: React.FC<GalleryProps> = ({ images = [] }) => {
                  <p className="text-white text-xs font-serif italic truncate">{img.caption}</p>
               </div>
             </div>
-          ))}
+          )) : (
+            [1,2,3,4,5,6].map(i => (
+              <div key={i} className="aspect-[4/3] bg-neutral-900 flex items-center justify-center border border-white/5 opacity-20">
+                <p className="text-[7px] text-white font-bold uppercase tracking-[0.5em] italic">Locked Negative 00{i}</p>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
       {selectedImageId !== null && activeImage && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center p-4 animate-in fade-in duration-300">
           <button 
             className="absolute top-8 right-8 text-white hover:text-rosso transition-colors"
             onClick={() => setSelectedImageId(null)}
@@ -78,7 +83,7 @@ const Gallery: React.FC<GalleryProps> = ({ images = [] }) => {
             <img 
               src={activeImage.url} 
               alt={activeImage.caption} 
-              className="w-full h-auto max-h-[80vh] object-contain shadow-2xl border-2 border-rosso/20"
+              className="w-full h-auto max-h-[80vh] object-contain shadow-2xl border-2 border-rosso/20 animate-in zoom-in-95 duration-700"
             />
             <div className="mt-6 text-center">
               <span className="text-rosso uppercase tracking-widest text-xs font-bold block mb-2">{activeImage.category}</span>
