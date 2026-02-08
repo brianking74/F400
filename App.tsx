@@ -83,16 +83,13 @@ const App: React.FC = () => {
         if (gal) setGalleryImages(gal || []);
 
       } catch (err) {
-        console.warn("Archive access restricted, starting fresh.");
+        console.warn("Archive access restricted.");
       } finally {
-        // Critical: Set initializing to false to render the app immediately
         setIsInitializing(false);
-        
         const isLocked = localStorage.getItem(MANIFEST_KEY) === 'true';
         if (!isLocked && !synthesisStarted.current) {
           synthesisStarted.current = true;
-          // Delayed synthesis to ensure initial state hydration has settled
-          setTimeout(() => runSilentArchiveSynthesis(), 1000);
+          runSilentArchiveSynthesis();
         }
       }
     };
@@ -102,32 +99,37 @@ const App: React.FC = () => {
   const runSilentArchiveSynthesis = async () => {
     if (localStorage.getItem(MANIFEST_KEY) === 'true') return;
 
-    // Defensive check for the environment
+    // Direct use of API key as provided by environment
     const aiKey = process.env.API_KEY;
-    const hasPromptKey = await (window as any).aistudio?.hasSelectedApiKey?.().catch(() => false);
-    
-    if (!aiKey && !hasPromptKey) return;
+    if (!aiKey) {
+      console.warn("API Key not found in environment.");
+      return;
+    }
 
-    const ai = new GoogleGenAI({ apiKey: aiKey || process.env.API_KEY });
+    const ai = new GoogleGenAI({ apiKey: aiKey });
 
     const generateImage = async (prompt: string): Promise<string | null> => {
       try {
         const res = await ai.models.generateContent({
           model: 'gemini-3-pro-image-preview',
           contents: { parts: [{ text: prompt }] },
-          config: { imageConfig: { aspectRatio: "16:9", imageSize: "1K" } }
+          config: { 
+            imageConfig: { aspectRatio: "16:9", imageSize: "1K" },
+            seed: 1976 // Ensuring deterministic output for consistent visuals
+          }
         });
         const part = res.candidates?.[0]?.content?.parts.find(p => p.inlineData);
         return part?.inlineData?.data ? `data:image/png;base64,${part.inlineData.data}` : null;
-      } catch (e) { return null; }
+      } catch (e) { 
+        console.error("Generation failed:", e);
+        return null; 
+      }
     };
 
     try {
       // 1. HERO BANNER - STABLE LOCK
-      // We check for existing content first. If it's there, we NEVER regenerate.
       const currentHero = heroImage || await getAsset('heroImage');
       if (!currentHero) {
-        // USES THE CONSTANT HERO_PROMPT - NO LONGER UPDATABLE BY ACCIDENT
         const hImg = await generateImage(HERO_PROMPT);
         if (hImg) { 
           setHeroImage(hImg); 
@@ -197,7 +199,7 @@ const App: React.FC = () => {
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.ctrlKey && e.shiftKey && e.key === 'R') {
-      if(window.confirm("Purge Locked Archive? This is the ONLY way to regenerate images.")) {
+      if(window.confirm("Purge Locked Archive?")) {
         localStorage.removeItem(MANIFEST_KEY);
         indexedDB.deleteDatabase(DB_NAME);
         window.location.reload();
@@ -214,7 +216,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen selection:bg-rosso selection:text-white outline-none" id="top" onKeyDown={handleKeyDown} tabIndex={0}>
+    <div className="min-h-screen selection:bg-rosso selection:text-white outline-none relative" id="top" onKeyDown={handleKeyDown} tabIndex={0}>
       <Header />
       <main className="animate-in fade-in duration-700">
         <Hero customImage={heroImage} />
