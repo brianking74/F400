@@ -20,7 +20,7 @@ const Versions: React.FC<VersionsProps> = ({ images = {} }) => {
         <div className="grid lg:grid-cols-3 gap-10">
           {VERSIONS.map((v) => (
             <div key={v.id} className="bg-white border border-gray-100 shadow-sm hover:shadow-2xl transition-all duration-500 group overflow-hidden flex flex-col">
-              <div className="h-64 overflow-hidden relative bg-neutral-900 flex items-center justify-center p-4">
+              <div className="aspect-video overflow-hidden relative bg-neutral-900 flex items-center justify-center p-0">
                 {images[v.id] ? (
                   <img 
                     src={images[v.id]} 

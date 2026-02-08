@@ -33,7 +33,7 @@ const History: React.FC<HistoryProps> = ({ customImage }) => {
 
           <div className="relative group">
             <div className="relative p-4 md:p-8 bg-white shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-gray-100">
-              <div className="aspect-[4/3] w-full overflow-hidden bg-neutral-900 flex items-center justify-center relative">
+              <div className="aspect-video w-full overflow-hidden bg-neutral-900 flex items-center justify-center relative">
                 {customImage ? (
                   <img 
                     src={customImage} 

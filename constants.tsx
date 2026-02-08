@@ -10,6 +10,9 @@ export const COLORS = {
   SILVER: '#C0C0C0',
 };
 
+// DO NOT MODIFY THIS PROMPT - IT IS THE STABLE HERO BANNER SOURCE
+export const HERO_PROMPT = "A red Ferrari 400 driving on a winding coastal road at sunset, high angle shot, cinematic lighting, warm orange and yellow sky, motion blur on the wheels, professional automotive photography.";
+
 export const HISTORY_PROMPT = "Studio photography of a classic 1977 Ferrari 400 grand tourer, Rosso Corsa red, sharp angular three-box silhouette, Pininfarina wedge design, perfectly straight horizontal waistline, five-spoke alloy wheels, low front nose with closed pop-up headlights, clean white background, photorealistic 1970s Italian aesthetic.";
 
 export const VERSIONS: (CarVersion & { prompt: string })[] = [
@@ -58,12 +61,20 @@ export const VERSIONS: (CarVersion & { prompt: string })[] = [
 ];
 
 export const GALLERY_PROMPTS: (GalleryImage & { prompt: string })[] = [
+  // Exterior (3)
   { id: 1, category: 'Exterior', url: '', prompt: 'Side profile silhouette of a red Ferrari 400, perfectly horizontal lines, sharp wedge design, 1970s automotive poster aesthetic.', caption: 'The Pininfarina silhouette is a study in 1970s wedge-design elegance.' },
-  { id: 2, category: 'Interior', url: '', prompt: 'Luxurious 1970s Ferrari 400 cabin, tan Connolly leather, thick wood-rimmed steering wheel, silver gauges, elegant grand tourer interior.', caption: 'Luxurious Connolly leather and wood-accented instruments define the cabin.' },
-  { id: 3, category: 'Details', url: '', prompt: 'Close-up of a Ferrari 400 Colombo V12 engine, red crackle finish, silver intake manifolds, high detail mechanical photography.', caption: 'A V12 engine block, heart of the 400 series.' },
   { id: 4, category: 'Exterior', url: '', prompt: 'Rear view of a red Ferrari 400, four round circular taillights, sharp rear deck, chrome badging, quad exhaust.', caption: 'Dramatic rear view showing the iconic quad round taillights.' },
-  { id: 5, category: 'Details', url: '', prompt: 'Macro shot of the black rectangular front grille of a 1977 Ferrari 400 with a chrome prancing horse badge.', caption: 'Classic Ferrari badge detail on the front nose.' },
+  { id: 7, category: 'Exterior', url: '', prompt: 'Cinematic front three-quarter view of a Rosso Corsa Ferrari 400 driving on a coastal road at golden hour, headlights pop-up closed, motion blur.', caption: 'The 400 in its natural element: the open road.' },
+  
+  // Interior (3)
+  { id: 2, category: 'Interior', url: '', prompt: 'Luxurious 1970s Ferrari 400 cabin, tan Connolly leather, thick wood-rimmed steering wheel, silver gauges, elegant grand tourer interior.', caption: 'Luxurious Connolly leather and wood-accented instruments define the cabin.' },
   { id: 6, category: 'Interior', url: '', prompt: 'Center console of a Ferrari 400 Automatic, showing the T-shaped shift lever, tan leather surrounding, 1970s luxury details.', caption: 'The center console featuring the groundbreaking automatic transmission.' },
+  { id: 8, category: 'Interior', url: '', prompt: 'Detailed shot of the Ferrari 400 rear 2+2 seats, premium tan leather with distinct stitching, luxurious 1970s grand tourer upholstery.', caption: 'The 2+2 configuration offered uncompromising luxury for four.' },
+
+  // Details (3)
+  { id: 3, category: 'Details', url: '', prompt: 'Close-up of a Ferrari 400 Colombo V12 engine, red crackle finish, silver intake manifolds, high detail mechanical photography.', caption: 'A V12 engine block, heart of the 400 series.' },
+  { id: 5, category: 'Details', url: '', prompt: 'Macro shot of the black rectangular front grille of a 1977 Ferrari 400 with a chrome prancing horse badge.', caption: 'Classic Ferrari badge detail on the front nose.' },
+  { id: 9, category: 'Details', url: '', prompt: 'Macro close-up of the "400 Automatic" chrome script badge on the rear trunk of a Ferrari, 1970s typography, high polished finish.', caption: 'Distinctive 1970s badging detail.' },
 ];
 
 export const OWNERS: (Owner & { prompt: string })[] = [

@@ -8,11 +8,11 @@ import Versions from './components/Versions';
 import Owners from './components/Owners';
 import Gallery from './components/Gallery';
 import Footer from './components/Footer';
-import { VERSIONS, GALLERY_PROMPTS, OWNERS, HISTORY_PROMPT } from './constants';
+import { VERSIONS, GALLERY_PROMPTS, OWNERS, HISTORY_PROMPT, HERO_PROMPT } from './constants';
 
 const DB_NAME = 'F400_STABLE_VAULT_V2';
 const STORE_NAME = 'assets';
-const MANIFEST_KEY = 'f400_archive_locked_final_v2';
+const MANIFEST_KEY = 'f400_archive_locked_permanent_v100';
 
 const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
@@ -68,7 +68,6 @@ const App: React.FC = () => {
   useEffect(() => {
     const bootstrapArchive = async () => {
       try {
-        // Load whatever we have in the vault
         const [h, hist, vers, own, gal] = await Promise.all([
           getAsset('heroImage'),
           getAsset('historyImage'),
@@ -83,27 +82,33 @@ const App: React.FC = () => {
         if (own) setOwnerImages(own || {});
         if (gal) setGalleryImages(gal || []);
 
-        // Instant UI hydration
-        setIsInitializing(false);
-
-        // Silent, one-time generation if the manifest lock isn't set
-        const isFullyLocked = localStorage.getItem(MANIFEST_KEY) === 'true';
-        if (!isFullyLocked && !synthesisStarted.current) {
-          synthesisStarted.current = true;
-          runSilentArchiveSynthesis();
-        }
       } catch (err) {
+        console.warn("Archive access restricted, starting fresh.");
+      } finally {
+        // Critical: Set initializing to false to render the app immediately
         setIsInitializing(false);
+        
+        const isLocked = localStorage.getItem(MANIFEST_KEY) === 'true';
+        if (!isLocked && !synthesisStarted.current) {
+          synthesisStarted.current = true;
+          // Delayed synthesis to ensure initial state hydration has settled
+          setTimeout(() => runSilentArchiveSynthesis(), 1000);
+        }
       }
     };
     bootstrapArchive();
   }, []);
 
   const runSilentArchiveSynthesis = async () => {
-    const hasKey = !!process.env.API_KEY || (await (window as any).aistudio?.hasSelectedApiKey?.());
-    if (!hasKey) return;
+    if (localStorage.getItem(MANIFEST_KEY) === 'true') return;
 
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Defensive check for the environment
+    const aiKey = process.env.API_KEY;
+    const hasPromptKey = await (window as any).aistudio?.hasSelectedApiKey?.().catch(() => false);
+    
+    if (!aiKey && !hasPromptKey) return;
+
+    const ai = new GoogleGenAI({ apiKey: aiKey || process.env.API_KEY });
 
     const generateImage = async (prompt: string): Promise<string | null> => {
       try {
@@ -118,49 +123,81 @@ const App: React.FC = () => {
     };
 
     try {
-      // Background synthesis - updates UI progressively as assets lock in
-      const hImgTask = generateImage("Masterpiece cinematic automotive photography of a 1977 Ferrari 400 in Rosso Corsa red. Sharp Pininfarina wedge body, distinct three-box grand tourer silhouette, low front nose, five-spoke wheels, evening sunset light, dramatic atmosphere, high resolution.")
-        .then(async (img) => { if (img) { setHeroImage(img); await saveAsset('heroImage', img); } });
+      // 1. HERO BANNER - STABLE LOCK
+      // We check for existing content first. If it's there, we NEVER regenerate.
+      const currentHero = heroImage || await getAsset('heroImage');
+      if (!currentHero) {
+        // USES THE CONSTANT HERO_PROMPT - NO LONGER UPDATABLE BY ACCIDENT
+        const hImg = await generateImage(HERO_PROMPT);
+        if (hImg) { 
+          setHeroImage(hImg); 
+          await saveAsset('heroImage', hImg); 
+        }
+      }
 
-      const histImgTask = generateImage(HISTORY_PROMPT)
-        .then(async (img) => { if (img) { setHistoryImage(img); await saveAsset('historyImage', img); } });
+      // 2. HISTORY
+      const currentHistory = historyImage || await getAsset('historyImage');
+      if (!currentHistory) {
+        const histImg = await generateImage(HISTORY_PROMPT);
+        if (histImg) { 
+          setHistoryImage(histImg); 
+          await saveAsset('historyImage', histImg); 
+        }
+      }
 
-      const versTask = Promise.all(VERSIONS.map(async v => ({ id: v.id, data: await generateImage(v.prompt) })))
-        .then(async (results) => {
-          const vMap: Record<string, string> = {};
-          results.forEach(r => { if (r.data) vMap[r.id] = r.data; });
-          setVersionImages(vMap);
-          await saveAsset('versionImages', vMap);
-        });
+      // 3. VERSIONS
+      const existingVers = await getAsset('versionImages') || {};
+      const newVMap: Record<string, string> = { ...existingVers, ...versionImages };
+      let vChanged = false;
+      for (const v of VERSIONS) {
+        if (!newVMap[v.id]) {
+          const data = await generateImage(v.prompt);
+          if (data) { newVMap[v.id] = data; vChanged = true; }
+        }
+      }
+      if (vChanged) {
+        setVersionImages(newVMap);
+        await saveAsset('versionImages', newVMap);
+      }
 
-      const ownersTask = Promise.all(OWNERS.map(async o => ({ id: o.id, data: await generateImage(o.prompt) })))
-        .then(async (results) => {
-          const oMap: Record<string, string> = {};
-          results.forEach(r => { if (r.data) oMap[r.id] = r.data; });
-          setOwnerImages(oMap);
-          await saveAsset('ownerImages', oMap);
-        });
+      // 4. OWNERS
+      const existingOwn = await getAsset('ownerImages') || {};
+      const newOMap: Record<string, string> = { ...existingOwn, ...ownerImages };
+      let oChanged = false;
+      for (const o of OWNERS) {
+        if (!newOMap[o.id]) {
+          const data = await generateImage(o.prompt);
+          if (data) { newOMap[o.id] = data; oChanged = true; }
+        }
+      }
+      if (oChanged) {
+        setOwnerImages(newOMap);
+        await saveAsset('ownerImages', newOMap);
+      }
 
-      const galleryTask = Promise.all(GALLERY_PROMPTS.map(async g => ({ ...g, url: await generateImage(g.prompt) })))
-        .then(async (results) => {
-          const validGallery = results.filter(r => !!r.url);
-          setGalleryImages(validGallery);
-          await saveAsset('galleryImages', validGallery);
-        });
-
-      await Promise.all([hImgTask, histImgTask, versTask, ownersTask, galleryTask]);
+      // 5. GALLERY
+      const existingGal = await getAsset('galleryImages') || [];
+      if (existingGal.length < GALLERY_PROMPTS.length) {
+        const resultsG = await Promise.all(GALLERY_PROMPTS.map(async g => {
+          const existing = existingGal.find((ex: any) => ex.id === g.id);
+          if (existing) return existing;
+          const url = await generateImage(g.prompt);
+          return url ? { ...g, url } : null;
+        }));
+        const validGallery = resultsG.filter(r => r !== null);
+        setGalleryImages(validGallery);
+        await saveAsset('galleryImages', validGallery);
+      }
       
-      // Permanently lock the archive for this user
       localStorage.setItem(MANIFEST_KEY, 'true');
     } catch (err) {
-      // Silent error handling
+      console.warn("Synthesis interrupted.");
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Hidden debug: Ctrl + Shift + R to force purge archive
     if (e.ctrlKey && e.shiftKey && e.key === 'R') {
-      if(window.confirm("Purge Locked Archive?")) {
+      if(window.confirm("Purge Locked Archive? This is the ONLY way to regenerate images.")) {
         localStorage.removeItem(MANIFEST_KEY);
         indexedDB.deleteDatabase(DB_NAME);
         window.location.reload();
@@ -169,7 +206,11 @@ const App: React.FC = () => {
   };
 
   if (isInitializing) {
-    return <div className="h-screen w-full bg-black"></div>;
+    return (
+      <div className="h-screen w-full bg-black flex items-center justify-center">
+        <div className="w-12 h-[1px] bg-rosso animate-pulse"></div>
+      </div>
+    );
   }
 
   return (
