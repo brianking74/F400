@@ -1,18 +1,31 @@
 
-import React, { useEffect } from 'react';
-import { ArrowLeft, Zap, Settings, History, Info, ChevronRight } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+import { ArrowLeft, Zap, Settings, History, Info, ChevronRight, Camera } from 'lucide-react';
 import { CarVersion } from '../types';
 
 interface VersionDetailProps {
   version: CarVersion;
   imageUrl: string;
   onBack: () => void;
+  isAdmin?: boolean;
+  onUpdateImage?: (base64: string) => void;
 }
 
-const VersionDetail: React.FC<VersionDetailProps> = ({ version, imageUrl, onBack }) => {
+const VersionDetail: React.FC<VersionDetailProps> = ({ version, imageUrl, onBack, isAdmin = false, onUpdateImage }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onUpdateImage) {
+      const reader = new FileReader();
+      reader.onloadend = () => onUpdateImage(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-white text-black animate-in fade-in slide-in-from-right duration-700">
@@ -32,7 +45,7 @@ const VersionDetail: React.FC<VersionDetailProps> = ({ version, imageUrl, onBack
         </div>
       </div>
 
-      <div className="relative h-[60vh] bg-neutral-900 overflow-hidden flex items-center justify-center">
+      <div className="relative h-[60vh] bg-neutral-900 overflow-hidden flex items-center justify-center group">
         {imageUrl ? (
           <img 
             src={imageUrl} 
@@ -42,6 +55,26 @@ const VersionDetail: React.FC<VersionDetailProps> = ({ version, imageUrl, onBack
         ) : (
           <div className="w-12 h-[1px] bg-rosso animate-pulse"></div>
         )}
+
+        {isAdmin && (
+          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-20 pointer-events-none group-hover:pointer-events-auto">
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="bg-rosso text-white px-6 py-3 text-[10px] uppercase font-bold tracking-widest flex items-center space-x-3 shadow-2xl hover:scale-105 transition-transform"
+            >
+              <Camera size={16} />
+              <span>Replace Archival Asset</span>
+            </button>
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              className="hidden" 
+              accept="image/*" 
+              onChange={handleFileChange} 
+            />
+          </div>
+        )}
+
         <div className="absolute inset-0 bg-gradient-to-t from-white via-transparent to-transparent"></div>
         <div className="absolute bottom-0 left-0 w-full p-12 max-w-7xl mx-auto">
           <span className="bg-rosso text-white text-[10px] font-bold px-4 py-2 uppercase tracking-[0.4em] mb-4 inline-block">

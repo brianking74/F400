@@ -14,7 +14,7 @@ import { VERSIONS, GALLERY_PROMPTS, OWNERS, HISTORY_PROMPT, HERO_PROMPT } from '
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
 const STORE_NAME = 'archival_assets';
 const MANIFEST_KEY = 'f400_archive_permanent_lock_v1';
-const ADMIN_KEY = 'f400_admin_active_session'; // Changed key for session storage
+const ADMIN_KEY = 'f400_admin_active_session';
 
 const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
@@ -70,7 +70,6 @@ const App: React.FC = () => {
   const synthesisInFlight = useRef(false);
 
   useEffect(() => {
-    // Admin Detection - Using SessionStorage for better isolation
     const params = new URLSearchParams(window.location.search);
     if (params.get('admin') === 'true') {
       sessionStorage.setItem(ADMIN_KEY, 'true');
@@ -207,7 +206,14 @@ const App: React.FC = () => {
   };
 
   const handleGalleryUpdate = async (id: number, base64: string) => {
-    const newGal = galleryImages.map(img => img.id === id ? { ...img, url: base64 } : img);
+    const exists = galleryImages.some(img => img.id === id);
+    let newGal;
+    if (exists) {
+      newGal = galleryImages.map(img => img.id === id ? { ...img, url: base64 } : img);
+    } else {
+      const promptInfo = GALLERY_PROMPTS.find(p => p.id === id);
+      newGal = [...galleryImages, { ...promptInfo, url: base64 }];
+    }
     setGalleryImages(newGal);
     await saveAsset('galleryImages', newGal);
     localStorage.setItem(MANIFEST_KEY, 'true');
@@ -267,7 +273,9 @@ const App: React.FC = () => {
         <VersionDetail 
           version={selectedVersion} 
           imageUrl={versionImages[selectedVersion.id]} 
-          onBack={() => setCurrentView('home')} 
+          onBack={() => setCurrentView('home')}
+          isAdmin={isAdmin}
+          onUpdateImage={(base64) => handleVersionUpdate(selectedVersion.id, base64)}
         />
       ) : null}
     </div>
