@@ -8,11 +8,13 @@ import Versions from './components/Versions';
 import Owners from './components/Owners';
 import Gallery from './components/Gallery';
 import Footer from './components/Footer';
+import VersionDetail from './components/VersionDetail';
 import { VERSIONS, GALLERY_PROMPTS, OWNERS, HISTORY_PROMPT, HERO_PROMPT } from './constants';
 
-const DB_NAME = 'F400_STABLE_VAULT_V2';
-const STORE_NAME = 'assets';
-const MANIFEST_KEY = 'f400_archive_locked_permanent_v100';
+const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
+const STORE_NAME = 'archival_assets';
+const MANIFEST_KEY = 'f400_archive_permanent_lock_v1';
+const ADMIN_KEY = 'f400_admin_active';
 
 const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
@@ -51,7 +53,7 @@ const saveAsset = async (key: string, value: any): Promise<void> => {
       transaction.oncomplete = () => resolve();
     });
   } catch (e) {
-    console.error("Archive Lock Failure:", e);
+    console.error("Archive: Storage error", e);
   }
 };
 
@@ -63,9 +65,20 @@ const App: React.FC = () => {
   const [galleryImages, setGalleryImages] = useState<any[]>([]);
   
   const [isInitializing, setIsInitializing] = useState(true);
-  const synthesisStarted = useRef(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [currentView, setCurrentView] = useState<'home' | string>('home');
+  const synthesisInFlight = useRef(false);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('admin') === 'true') {
+      localStorage.setItem(ADMIN_KEY, 'true');
+      setIsAdmin(true);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else {
+      setIsAdmin(localStorage.getItem(ADMIN_KEY) === 'true');
+    }
+
     const bootstrapArchive = async () => {
       try {
         const [h, hist, vers, own, gal] = await Promise.all([
@@ -82,124 +95,136 @@ const App: React.FC = () => {
         if (own) setOwnerImages(own || {});
         if (gal) setGalleryImages(gal || []);
 
-      } catch (err) {
-        console.warn("Archive access restricted.");
-      } finally {
         setIsInitializing(false);
+
         const isLocked = localStorage.getItem(MANIFEST_KEY) === 'true';
-        if (!isLocked && !synthesisStarted.current) {
-          synthesisStarted.current = true;
-          runSilentArchiveSynthesis();
+        if (isLocked) {
+          return;
         }
+
+        if (!synthesisInFlight.current) {
+          synthesisInFlight.current = true;
+          runArchivalSynthesis();
+        }
+      } catch (err) {
+        setIsInitializing(false);
       }
     };
     bootstrapArchive();
   }, []);
 
-  const runSilentArchiveSynthesis = async () => {
-    if (localStorage.getItem(MANIFEST_KEY) === 'true') return;
-
-    // Direct use of API key as provided by environment
+  const runArchivalSynthesis = async () => {
     const aiKey = process.env.API_KEY;
-    if (!aiKey) {
-      console.warn("API Key not found in environment.");
-      return;
-    }
-
+    if (!aiKey) return;
     const ai = new GoogleGenAI({ apiKey: aiKey });
 
-    const generateImage = async (prompt: string): Promise<string | null> => {
+    const generateImage = async (prompt: string, label: string): Promise<string | null> => {
       try {
         const res = await ai.models.generateContent({
-          model: 'gemini-3-pro-image-preview',
+          model: 'gemini-2.5-flash-image',
           contents: { parts: [{ text: prompt }] },
-          config: { 
-            imageConfig: { aspectRatio: "16:9", imageSize: "1K" },
-            seed: 1976 // Ensuring deterministic output for consistent visuals
-          }
+          config: { imageConfig: { aspectRatio: "16:9" }, seed: 1976 }
         });
         const part = res.candidates?.[0]?.content?.parts.find(p => p.inlineData);
         return part?.inlineData?.data ? `data:image/png;base64,${part.inlineData.data}` : null;
-      } catch (e) { 
-        console.error("Generation failed:", e);
-        return null; 
+      } catch (e) {
+        return null;
       }
     };
 
     try {
-      // 1. HERO BANNER - STABLE LOCK
-      const currentHero = heroImage || await getAsset('heroImage');
-      if (!currentHero) {
-        const hImg = await generateImage(HERO_PROMPT);
-        if (hImg) { 
-          setHeroImage(hImg); 
-          await saveAsset('heroImage', hImg); 
-        }
+      if (!(await getAsset('heroImage'))) {
+        const hImg = await generateImage(HERO_PROMPT, 'Hero');
+        if (hImg) { setHeroImage(hImg); await saveAsset('heroImage', hImg); }
       }
-
-      // 2. HISTORY
-      const currentHistory = historyImage || await getAsset('historyImage');
-      if (!currentHistory) {
-        const histImg = await generateImage(HISTORY_PROMPT);
-        if (histImg) { 
-          setHistoryImage(histImg); 
-          await saveAsset('historyImage', histImg); 
-        }
+      if (!(await getAsset('historyImage'))) {
+        const histImg = await generateImage(HISTORY_PROMPT, 'History');
+        if (histImg) { setHistoryImage(histImg); await saveAsset('historyImage', histImg); }
       }
-
-      // 3. VERSIONS
-      const existingVers = await getAsset('versionImages') || {};
-      const newVMap: Record<string, string> = { ...existingVers, ...versionImages };
+      const dbVers = await getAsset('versionImages') || {};
+      const vMap = { ...dbVers };
       let vChanged = false;
       for (const v of VERSIONS) {
-        if (!newVMap[v.id]) {
-          const data = await generateImage(v.prompt);
-          if (data) { newVMap[v.id] = data; vChanged = true; }
+        if (!vMap[v.id]) {
+          const data = await generateImage(v.prompt, `Variant ${v.name}`);
+          if (data) { vMap[v.id] = data; vChanged = true; setVersionImages({...vMap}); }
         }
       }
-      if (vChanged) {
-        setVersionImages(newVMap);
-        await saveAsset('versionImages', newVMap);
-      }
+      if (vChanged) await saveAsset('versionImages', vMap);
 
-      // 4. OWNERS
-      const existingOwn = await getAsset('ownerImages') || {};
-      const newOMap: Record<string, string> = { ...existingOwn, ...ownerImages };
+      const dbOwners = await getAsset('ownerImages') || {};
+      const oMap = { ...dbOwners };
       let oChanged = false;
       for (const o of OWNERS) {
-        if (!newOMap[o.id]) {
-          const data = await generateImage(o.prompt);
-          if (data) { newOMap[o.id] = data; oChanged = true; }
+        if (!oMap[o.id]) {
+          const data = await generateImage(o.prompt, `Owner ${o.name}`);
+          if (data) { oMap[o.id] = data; oChanged = true; setOwnerImages({...oMap}); }
         }
       }
-      if (oChanged) {
-        setOwnerImages(newOMap);
-        await saveAsset('ownerImages', newOMap);
-      }
+      if (oChanged) await saveAsset('ownerImages', oMap);
 
-      // 5. GALLERY
-      const existingGal = await getAsset('galleryImages') || [];
-      if (existingGal.length < GALLERY_PROMPTS.length) {
-        const resultsG = await Promise.all(GALLERY_PROMPTS.map(async g => {
-          const existing = existingGal.find((ex: any) => ex.id === g.id);
-          if (existing) return existing;
-          const url = await generateImage(g.prompt);
-          return url ? { ...g, url } : null;
-        }));
-        const validGallery = resultsG.filter(r => r !== null);
-        setGalleryImages(validGallery);
-        await saveAsset('galleryImages', validGallery);
+      const dbGal = await getAsset('galleryImages') || [];
+      const gList = [...dbGal];
+      let gChanged = false;
+      for (const gp of GALLERY_PROMPTS) {
+        if (!gList.find(g => g.id === gp.id)) {
+          const url = await generateImage(gp.prompt, `Gallery ${gp.id}`);
+          if (url) { gList.push({ ...gp, url }); gChanged = true; setGalleryImages([...gList]); }
+        }
       }
-      
+      if (gChanged) await saveAsset('galleryImages', gList);
       localStorage.setItem(MANIFEST_KEY, 'true');
     } catch (err) {
-      console.warn("Synthesis interrupted.");
+      console.error("Archive Error:", err);
+    } finally {
+      synthesisInFlight.current = false;
     }
   };
 
+  // Manual Update Handlers
+  const handleHeroUpdate = async (base64: string) => {
+    setHeroImage(base64);
+    await saveAsset('heroImage', base64);
+    localStorage.setItem(MANIFEST_KEY, 'true');
+  };
+
+  const handleHistoryUpdate = async (base64: string) => {
+    setHistoryImage(base64);
+    await saveAsset('historyImage', base64);
+    localStorage.setItem(MANIFEST_KEY, 'true');
+  };
+
+  const handleVersionUpdate = async (id: string, base64: string) => {
+    const newVers = { ...versionImages, [id]: base64 };
+    setVersionImages(newVers);
+    await saveAsset('versionImages', newVers);
+    localStorage.setItem(MANIFEST_KEY, 'true');
+  };
+
+  const handleOwnerUpdate = async (id: string, base64: string) => {
+    const newOwners = { ...ownerImages, [id]: base64 };
+    setOwnerImages(newOwners);
+    await saveAsset('ownerImages', newOwners);
+    localStorage.setItem(MANIFEST_KEY, 'true');
+  };
+
+  const handleGalleryUpdate = async (id: number, base64: string) => {
+    const newGal = galleryImages.map(img => img.id === id ? { ...img, url: base64 } : img);
+    setGalleryImages(newGal);
+    await saveAsset('galleryImages', newGal);
+    localStorage.setItem(MANIFEST_KEY, 'true');
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+      const newState = !isAdmin;
+      setIsAdmin(newState);
+      if (newState) localStorage.setItem(ADMIN_KEY, 'true');
+      else localStorage.removeItem(ADMIN_KEY);
+      alert(`Admin Mode: ${newState ? 'ENABLED' : 'DISABLED'}`);
+    }
     if (e.ctrlKey && e.shiftKey && e.key === 'R') {
-      if(window.confirm("Purge Locked Archive?")) {
+      if(window.confirm("CRITICAL: Purge Archival Vault?")) {
         localStorage.removeItem(MANIFEST_KEY);
         indexedDB.deleteDatabase(DB_NAME);
         window.location.reload();
@@ -215,17 +240,29 @@ const App: React.FC = () => {
     );
   }
 
+  const selectedVersion = VERSIONS.find(v => v.id === currentView);
+
   return (
     <div className="min-h-screen selection:bg-rosso selection:text-white outline-none relative" id="top" onKeyDown={handleKeyDown} tabIndex={0}>
-      <Header />
-      <main className="animate-in fade-in duration-700">
-        <Hero customImage={heroImage} />
-        <History customImage={historyImage} />
-        <Versions images={versionImages} />
-        <Owners images={ownerImages} />
-        <Gallery images={galleryImages} />
-      </main>
-      <Footer />
+      {currentView === 'home' ? (
+        <>
+          <Header />
+          <main className="animate-in fade-in duration-700">
+            <Hero customImage={heroImage} onUpdateImage={handleHeroUpdate} isAdmin={isAdmin} />
+            <History customImage={historyImage} onUpdateImage={handleHistoryUpdate} isAdmin={isAdmin} />
+            <Versions images={versionImages} onNavigate={setCurrentView} onUpdateImage={handleVersionUpdate} isAdmin={isAdmin} />
+            <Owners images={ownerImages} onUpdateImage={handleOwnerUpdate} isAdmin={isAdmin} />
+            <Gallery images={galleryImages} onUpdateImage={handleGalleryUpdate} isAdmin={isAdmin} />
+          </main>
+          <Footer />
+        </>
+      ) : selectedVersion ? (
+        <VersionDetail 
+          version={selectedVersion} 
+          imageUrl={versionImages[selectedVersion.id]} 
+          onBack={() => setCurrentView('home')} 
+        />
+      ) : null}
     </div>
   );
 };

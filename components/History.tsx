@@ -1,12 +1,26 @@
 
-import React from 'react';
+import React, { useRef } from 'react';
 import SectionTitle from './SectionTitle';
+import { Camera } from 'lucide-react';
 
 interface HistoryProps {
   customImage?: string;
+  onUpdateImage?: (base64: string) => void;
+  isAdmin?: boolean;
 }
 
-const History: React.FC<HistoryProps> = ({ customImage }) => {
+const History: React.FC<HistoryProps> = ({ customImage, onUpdateImage, isAdmin }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onUpdateImage) {
+      const reader = new FileReader();
+      reader.onloadend = () => onUpdateImage(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
   return (
     <section id="history" className="py-24 bg-white">
       <div className="max-w-7xl mx-auto px-6">
@@ -44,6 +58,19 @@ const History: React.FC<HistoryProps> = ({ customImage }) => {
                   <div className="text-center opacity-20">
                     <div className="w-12 h-[1px] bg-white mx-auto mb-4"></div>
                     <p className="text-[9px] uppercase tracking-[0.4em] text-white font-bold italic">Archival Plate 400.01</p>
+                  </div>
+                )}
+
+                {isAdmin && (
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none group-hover:pointer-events-auto">
+                    <button 
+                      onClick={() => fileInputRef.current?.click()}
+                      className="bg-rosso text-white px-4 py-2 text-[10px] uppercase font-bold tracking-widest flex items-center space-x-2 shadow-xl hover:scale-105 transition-transform"
+                    >
+                      <Camera size={14} />
+                      <span>Replace Plate</span>
+                    </button>
+                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
                   </div>
                 )}
               </div>

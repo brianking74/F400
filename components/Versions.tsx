@@ -1,14 +1,28 @@
 
-import React from 'react';
+import React, { useRef } from 'react';
 import SectionTitle from './SectionTitle';
 import { VERSIONS } from '../constants';
-import { Settings, Zap, History as HistoryIcon } from 'lucide-react';
+import { Settings, Zap, History as HistoryIcon, Camera } from 'lucide-react';
 
 interface VersionsProps {
   images?: Record<string, string>;
+  onNavigate: (id: string) => void;
+  onUpdateImage?: (id: string, base64: string) => void;
+  isAdmin?: boolean;
 }
 
-const Versions: React.FC<VersionsProps> = ({ images = {} }) => {
+const Versions: React.FC<VersionsProps> = ({ images = {}, onNavigate, onUpdateImage, isAdmin }) => {
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const handleFileChange = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onUpdateImage) {
+      const reader = new FileReader();
+      reader.onloadend = () => onUpdateImage(id, reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
   return (
     <section id="versions" className="py-24 bg-gray-50">
       <div className="max-w-7xl mx-auto px-6">
@@ -35,6 +49,25 @@ const Versions: React.FC<VersionsProps> = ({ images = {} }) => {
                 <div className="absolute top-4 right-4 bg-rosso text-white text-[10px] font-bold px-3 py-1 uppercase tracking-widest">
                   {v.year}
                 </div>
+
+                {isAdmin && (
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none group-hover:pointer-events-auto">
+                    <button 
+                      onClick={() => fileInputRefs.current[v.id]?.click()}
+                      className="bg-rosso text-white px-3 py-1.5 text-[9px] uppercase font-bold tracking-widest flex items-center space-x-2 shadow-xl hover:scale-105 transition-transform"
+                    >
+                      <Camera size={12} />
+                      <span>Update Variant Image</span>
+                    </button>
+                    <input 
+                      type="file" 
+                      ref={el => fileInputRefs.current[v.id] = el} 
+                      className="hidden" 
+                      accept="image/*" 
+                      onChange={(e) => handleFileChange(v.id, e)} 
+                    />
+                  </div>
+                )}
               </div>
               
               <div className="p-8 flex-grow flex flex-col">
@@ -58,8 +91,11 @@ const Versions: React.FC<VersionsProps> = ({ images = {} }) => {
                   </div>
                 </div>
 
-                <button className="w-full py-4 border border-black text-[10px] uppercase tracking-[0.2em] font-bold hover:bg-black hover:text-white transition-all">
-                  Request Archive Details
+                <button 
+                  onClick={() => onNavigate(v.id)}
+                  className="w-full py-4 border border-black text-[10px] uppercase tracking-[0.2em] font-bold hover:bg-black hover:text-white transition-all"
+                >
+                  Discover
                 </button>
               </div>
             </div>

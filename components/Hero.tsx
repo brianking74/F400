@@ -1,12 +1,16 @@
 
-import React from 'react';
-import { ChevronDown } from 'lucide-react';
+import React, { useRef } from 'react';
+import { ChevronDown, Camera, ShieldCheck } from 'lucide-react';
 
 interface HeroProps {
   customImage?: string;
+  onUpdateImage?: (base64: string) => void;
+  isAdmin?: boolean;
 }
 
-const Hero: React.FC<HeroProps> = ({ customImage }) => {
+const Hero: React.FC<HeroProps> = ({ customImage, onUpdateImage, isAdmin = false }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement> | React.MouseEvent<HTMLDivElement>, href: string) => {
     if (e) e.preventDefault();
     const element = document.querySelector(href);
@@ -21,8 +25,48 @@ const Hero: React.FC<HeroProps> = ({ customImage }) => {
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onUpdateImage) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        onUpdateImage(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const triggerUpload = () => {
+    fileInputRef.current?.click();
+  };
+
   return (
     <header className="relative h-screen w-full overflow-hidden flex items-center justify-center bg-neutral-950">
+      {/* Admin Management Tools - Only visible if isAdmin is true */}
+      {isAdmin && (
+        <div className="absolute top-24 right-8 z-30 flex flex-col items-end space-y-2">
+          <div className="flex items-center space-x-1 text-[8px] text-rosso uppercase font-bold tracking-widest bg-black/80 px-2 py-1 mb-1">
+            <ShieldCheck size={10} />
+            <span>Admin Control Active</span>
+          </div>
+          <button 
+            onClick={triggerUpload}
+            className="flex items-center space-x-3 bg-black/60 backdrop-blur-xl border border-white/20 px-6 py-3 text-[10px] text-white uppercase tracking-widest hover:bg-rosso hover:border-rosso transition-all group shadow-2xl"
+            title="Upload Permanent Hero Image"
+          >
+            <Camera size={14} className="group-hover:scale-110 transition-transform" />
+            <span className="font-bold">Replace Banner</span>
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            className="hidden" 
+            accept="image/*" 
+            onChange={handleFileChange} 
+          />
+        </div>
+      )}
+
       <div className="absolute inset-0 z-0">
         {customImage ? (
           <img 
@@ -55,29 +99,22 @@ const Hero: React.FC<HeroProps> = ({ customImage }) => {
           Maranello’s V12 Masterpiece.
         </p>
 
-        <div className="flex flex-col sm:flex-row gap-6 justify-center opacity-0 animate-[fade-in-up_1.2s_ease-out_0.6s_forwards]">
+        <div className="flex flex-col items-center opacity-0 animate-[fade-in-up_1.2s_ease-out_0.6s_forwards]">
           <a 
             href="#history" 
             onClick={(e) => scrollToSection(e, '#history')}
-            className="px-14 py-5 bg-rosso text-white font-bold text-xs uppercase tracking-[0.3em] hover:bg-red-700 transition-all transform hover:scale-105 shadow-2xl"
+            className="px-14 py-5 bg-rosso text-white font-bold text-xs uppercase tracking-[0.3em] hover:bg-red-700 transition-all transform hover:scale-105 shadow-2xl mb-4"
           >
-            Enter Archive
+            Live The Legacy
           </a>
-          <a 
-            href="#gallery" 
-            onClick={(e) => scrollToSection(e, '#gallery')}
-            className="px-14 py-5 border border-white/40 text-white font-bold text-xs uppercase tracking-[0.3em] hover:bg-white hover:text-black transition-all transform hover:border-white"
+          
+          <div 
+            className="animate-bounce cursor-pointer p-2 opacity-40 hover:opacity-100 transition-opacity flex justify-center w-full" 
+            onClick={(e) => scrollToSection(e, '#history')}
           >
-            Visual Legacy
-          </a>
+            <ChevronDown size={44} className="text-white" />
+          </div>
         </div>
-      </div>
-
-      <div 
-        className="absolute bottom-12 left-1/2 -translate-x-1/2 animate-bounce cursor-pointer z-10 p-2 opacity-40 hover:opacity-100 transition-opacity" 
-        onClick={(e) => scrollToSection(e, '#history')}
-      >
-        <ChevronDown size={44} className="text-white" />
       </div>
 
       <style>{`

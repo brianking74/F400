@@ -1,13 +1,27 @@
 
-import React from 'react';
+import React, { useRef } from 'react';
 import SectionTitle from './SectionTitle';
 import { OWNERS } from '../constants';
+import { Camera } from 'lucide-react';
 
 interface OwnersProps {
   images?: Record<string, string>;
+  onUpdateImage?: (id: string, base64: string) => void;
+  isAdmin?: boolean;
 }
 
-const Owners: React.FC<OwnersProps> = ({ images = {} }) => {
+const Owners: React.FC<OwnersProps> = ({ images = {}, onUpdateImage, isAdmin }) => {
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  const handleFileChange = (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onUpdateImage) {
+      const reader = new FileReader();
+      reader.onloadend = () => onUpdateImage(id, reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
+
   return (
     <section id="owners" className="py-24 bg-black text-white relative overflow-hidden">
       <div className="absolute top-0 right-0 w-1/2 h-full bg-rosso/5 -skew-x-12 transform translate-x-1/2"></div>
@@ -31,6 +45,25 @@ const Owners: React.FC<OwnersProps> = ({ images = {} }) => {
                   />
                 ) : (
                   <div className="text-[8px] uppercase tracking-widest text-white/10 px-4 italic font-bold">Heritage Profile {owner.id}</div>
+                )}
+
+                {isAdmin && (
+                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center pointer-events-none group-hover:pointer-events-auto">
+                    <button 
+                      onClick={() => fileInputRefs.current[owner.id]?.click()}
+                      className="bg-white text-black p-2 rounded-full shadow-xl hover:bg-rosso hover:text-white transition-colors"
+                      title="Update Profile Image"
+                    >
+                      <Camera size={20} />
+                    </button>
+                    <input 
+                      type="file" 
+                      ref={el => fileInputRefs.current[owner.id] = el} 
+                      className="hidden" 
+                      accept="image/*" 
+                      onChange={(e) => handleFileChange(owner.id, e)} 
+                    />
+                  </div>
                 )}
               </div>
               <h3 className="text-2xl font-serif mb-2 text-rosso">{owner.name}</h3>
