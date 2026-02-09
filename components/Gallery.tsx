@@ -2,6 +2,7 @@
 import React, { useState, useRef } from 'react';
 import SectionTitle from './SectionTitle';
 import { X, Maximize2, Camera } from 'lucide-react';
+import { GALLERY_PROMPTS } from '../constants';
 
 interface GalleryProps {
   images?: any[];
@@ -14,12 +15,16 @@ const Gallery: React.FC<GalleryProps> = ({ images = [], onUpdateImage, isAdmin }
   const categories: ('All' | 'Exterior' | 'Interior' | 'Details')[] = ['All', 'Exterior', 'Interior', 'Details'];
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
-  const filteredImages = filter === 'All' 
-    ? images 
-    : images.filter(img => img.category === filter);
+  // Filter the base definitions so we always have the correct number of slots
+  const filteredPrompts = filter === 'All' 
+    ? GALLERY_PROMPTS 
+    : GALLERY_PROMPTS.filter(p => p.category === filter);
 
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
-  const activeImage = images.find(img => img.id === selectedImageId);
+  
+  // Find actual image data from state for a given prompt ID
+  const getImageData = (id: number) => images.find(img => img.id === id);
+  const activeImage = getImageData(selectedImageId || -1);
 
   const handleFileChange = (id: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -51,56 +56,71 @@ const Gallery: React.FC<GalleryProps> = ({ images = [], onUpdateImage, isAdmin }
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 min-h-[400px]">
-          {filteredImages.length > 0 ? filteredImages.map((img) => (
-            <div 
-              key={img.id} 
-              className="relative group aspect-video overflow-hidden bg-neutral-900 cursor-pointer border border-gray-100 shadow-sm animate-in zoom-in duration-500"
-            >
-              <img 
-                src={img.url} 
-                alt={img.caption}
-                className="w-full h-full object-contain transition-all duration-1000"
-                onClick={() => setSelectedImageId(img.id)}
-              />
-              <div className="absolute inset-0 bg-rosso/0 group-hover:bg-rosso/5 transition-all duration-300 pointer-events-none"></div>
-              
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 space-x-4 pointer-events-none group-hover:pointer-events-auto">
-                <button 
-                  onClick={() => setSelectedImageId(img.id)}
-                  className="bg-white/90 p-3 rounded-full shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-transform hover:bg-white"
-                >
-                  <Maximize2 className="text-rosso" size={24} />
-                </button>
+          {filteredPrompts.map((prompt) => {
+            const imageData = getImageData(prompt.id);
+            const hasImage = !!imageData?.url;
 
-                {isAdmin && (
+            return (
+              <div 
+                key={prompt.id} 
+                className={`relative group aspect-video overflow-hidden ${hasImage ? 'bg-neutral-900' : 'bg-neutral-100'} border border-gray-100 shadow-sm animate-in zoom-in duration-500`}
+              >
+                {hasImage ? (
                   <>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); fileInputRefs.current[img.id]?.click(); }}
-                      className="bg-rosso text-white p-3 rounded-full shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-transform hover:bg-red-700"
-                    >
-                      <Camera size={24} />
-                    </button>
-                    <input 
-                      type="file" 
-                      ref={el => fileInputRefs.current[img.id] = el} 
-                      className="hidden" 
-                      accept="image/*" 
-                      onChange={(e) => handleFileChange(img.id, e)} 
+                    <img 
+                      src={imageData.url} 
+                      alt={prompt.caption}
+                      className="w-full h-full object-contain transition-all duration-1000 cursor-pointer"
+                      onClick={() => setSelectedImageId(prompt.id)}
                     />
+                    <div className="absolute inset-0 bg-rosso/0 group-hover:bg-rosso/5 transition-all duration-300 pointer-events-none"></div>
                   </>
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-neutral-950 opacity-20">
+                    <p className="text-[7px] text-white font-bold uppercase tracking-[0.5em] italic">Locked Negative 00{prompt.id}</p>
+                    <p className="text-[6px] text-white/50 uppercase tracking-widest mt-2">{prompt.category}</p>
+                  </div>
+                )}
+                
+                {/* Overlay Tools */}
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 space-x-4 pointer-events-none group-hover:pointer-events-auto">
+                  {hasImage && (
+                    <button 
+                      onClick={() => setSelectedImageId(prompt.id)}
+                      className="bg-white/90 p-3 rounded-full shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-transform hover:bg-white"
+                    >
+                      <Maximize2 className="text-rosso" size={24} />
+                    </button>
+                  )}
+
+                  {isAdmin && (
+                    <>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); fileInputRefs.current[prompt.id]?.click(); }}
+                        className="bg-rosso text-white p-3 rounded-full shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-transform hover:bg-red-700"
+                        title="Upload/Replace Gallery Asset"
+                      >
+                        <Camera size={24} />
+                      </button>
+                      <input 
+                        type="file" 
+                        ref={el => fileInputRefs.current[prompt.id] = el} 
+                        className="hidden" 
+                        accept="image/*" 
+                        onChange={(e) => handleFileChange(prompt.id, e)} 
+                      />
+                    </>
+                  )}
+                </div>
+
+                {hasImage && (
+                  <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                     <p className="text-white text-xs font-serif italic truncate">{prompt.caption}</p>
+                  </div>
                 )}
               </div>
-              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                 <p className="text-white text-xs font-serif italic truncate">{img.caption}</p>
-              </div>
-            </div>
-          )) : (
-            [1,2,3,4,5,6].map(i => (
-              <div key={i} className="aspect-video bg-neutral-900 flex items-center justify-center border border-white/5 opacity-20">
-                <p className="text-[7px] text-white font-bold uppercase tracking-[0.5em] italic">Locked Negative 00{i}</p>
-              </div>
-            ))
-          )}
+            );
+          })}
         </div>
       </div>
 
