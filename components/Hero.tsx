@@ -1,14 +1,15 @@
 
 import React, { useRef } from 'react';
-import { ChevronDown, Camera, ShieldCheck } from 'lucide-react';
+import { ChevronDown, Camera, ShieldCheck, LogOut } from 'lucide-react';
 
 interface HeroProps {
   customImage?: string;
   onUpdateImage?: (base64: string) => void;
   isAdmin?: boolean;
+  onLogout?: () => void;
 }
 
-const Hero: React.FC<HeroProps> = ({ customImage, onUpdateImage, isAdmin = false }) => {
+const Hero: React.FC<HeroProps> = ({ customImage, onUpdateImage, isAdmin = false, onLogout }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const scrollToSection = (e: React.MouseEvent<HTMLAnchorElement> | React.MouseEvent<HTMLDivElement>, href: string) => {
@@ -45,10 +46,22 @@ const Hero: React.FC<HeroProps> = ({ customImage, onUpdateImage, isAdmin = false
       {/* Admin Management Tools - Only visible if isAdmin is true */}
       {isAdmin && (
         <div className="absolute top-24 right-8 z-30 flex flex-col items-end space-y-2">
-          <div className="flex items-center space-x-1 text-[8px] text-rosso uppercase font-bold tracking-widest bg-black/80 px-2 py-1 mb-1">
-            <ShieldCheck size={10} />
-            <span>Admin Control Active</span>
+          <div className="flex items-center space-x-2 mb-1">
+             <div className="flex items-center space-x-1 text-[8px] text-rosso uppercase font-bold tracking-widest bg-black/80 px-2 py-1.5 border border-rosso/30">
+              <ShieldCheck size={10} />
+              <span>Admin Control Active</span>
+            </div>
+            {onLogout && (
+              <button 
+                onClick={onLogout}
+                className="bg-white/10 hover:bg-rosso text-white p-1.5 transition-colors border border-white/10"
+                title="Exit Admin Mode"
+              >
+                <LogOut size={12} />
+              </button>
+            )}
           </div>
+          
           <button 
             onClick={triggerUpload}
             className="flex items-center space-x-3 bg-black/60 backdrop-blur-xl border border-white/20 px-6 py-3 text-[10px] text-white uppercase tracking-widest hover:bg-rosso hover:border-rosso transition-all group shadow-2xl"

@@ -14,7 +14,7 @@ import { VERSIONS, GALLERY_PROMPTS, OWNERS, HISTORY_PROMPT, HERO_PROMPT } from '
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
 const STORE_NAME = 'archival_assets';
 const MANIFEST_KEY = 'f400_archive_permanent_lock_v1';
-const ADMIN_KEY = 'f400_admin_active';
+const ADMIN_KEY = 'f400_admin_active_session'; // Changed key for session storage
 
 const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
@@ -70,13 +70,14 @@ const App: React.FC = () => {
   const synthesisInFlight = useRef(false);
 
   useEffect(() => {
+    // Admin Detection - Using SessionStorage for better isolation
     const params = new URLSearchParams(window.location.search);
     if (params.get('admin') === 'true') {
-      localStorage.setItem(ADMIN_KEY, 'true');
+      sessionStorage.setItem(ADMIN_KEY, 'true');
       setIsAdmin(true);
       window.history.replaceState({}, document.title, window.location.pathname);
     } else {
-      setIsAdmin(localStorage.getItem(ADMIN_KEY) === 'true');
+      setIsAdmin(sessionStorage.getItem(ADMIN_KEY) === 'true');
     }
 
     const bootstrapArchive = async () => {
@@ -98,9 +99,7 @@ const App: React.FC = () => {
         setIsInitializing(false);
 
         const isLocked = localStorage.getItem(MANIFEST_KEY) === 'true';
-        if (isLocked) {
-          return;
-        }
+        if (isLocked) return;
 
         if (!synthesisInFlight.current) {
           synthesisInFlight.current = true;
@@ -181,7 +180,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Manual Update Handlers
   const handleHeroUpdate = async (base64: string) => {
     setHeroImage(base64);
     await saveAsset('heroImage', base64);
@@ -215,16 +213,20 @@ const App: React.FC = () => {
     localStorage.setItem(MANIFEST_KEY, 'true');
   };
 
+  const handleLogout = () => {
+    sessionStorage.removeItem(ADMIN_KEY);
+    setIsAdmin(false);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.ctrlKey && e.shiftKey && e.key === 'A') {
       const newState = !isAdmin;
       setIsAdmin(newState);
-      if (newState) localStorage.setItem(ADMIN_KEY, 'true');
-      else localStorage.removeItem(ADMIN_KEY);
-      alert(`Admin Mode: ${newState ? 'ENABLED' : 'DISABLED'}`);
+      if (newState) sessionStorage.setItem(ADMIN_KEY, 'true');
+      else sessionStorage.removeItem(ADMIN_KEY);
     }
     if (e.ctrlKey && e.shiftKey && e.key === 'R') {
-      if(window.confirm("CRITICAL: Purge Archival Vault?")) {
+      if(window.confirm("Purge Archival Vault?")) {
         localStorage.removeItem(MANIFEST_KEY);
         indexedDB.deleteDatabase(DB_NAME);
         window.location.reload();
@@ -248,7 +250,12 @@ const App: React.FC = () => {
         <>
           <Header />
           <main className="animate-in fade-in duration-700">
-            <Hero customImage={heroImage} onUpdateImage={handleHeroUpdate} isAdmin={isAdmin} />
+            <Hero 
+              customImage={heroImage} 
+              onUpdateImage={handleHeroUpdate} 
+              isAdmin={isAdmin} 
+              onLogout={handleLogout} 
+            />
             <History customImage={historyImage} onUpdateImage={handleHistoryUpdate} isAdmin={isAdmin} />
             <Versions images={versionImages} onNavigate={setCurrentView} onUpdateImage={handleVersionUpdate} isAdmin={isAdmin} />
             <Owners images={ownerImages} onUpdateImage={handleOwnerUpdate} isAdmin={isAdmin} />
