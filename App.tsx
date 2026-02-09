@@ -10,10 +10,10 @@ import Gallery from './components/Gallery';
 import Footer from './components/Footer';
 import VersionDetail from './components/VersionDetail';
 import { VERSIONS, GALLERY_PROMPTS, OWNERS, HISTORY_PROMPT, HERO_PROMPT } from './constants';
+import { Loader2, database as DatabaseIcon, ShieldCheck } from 'lucide-react';
 
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
 const STORE_NAME = 'archival_assets';
-const MANIFEST_KEY = 'f400_archive_permanent_lock_v1';
 const ADMIN_KEY = 'f400_admin_active_session';
 
 const initDB = (): Promise<IDBDatabase> => {
@@ -66,6 +66,7 @@ const App: React.FC = () => {
   
   const [isInitializing, setIsInitializing] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [synthesisStatus, setSynthesisStatus] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<'home' | string>('home');
   const synthesisInFlight = useRef(false);
 
@@ -97,9 +98,7 @@ const App: React.FC = () => {
 
         setIsInitializing(false);
 
-        const isLocked = localStorage.getItem(MANIFEST_KEY) === 'true';
-        if (isLocked) return;
-
+        // Always attempt to fill missing gaps in the local vault
         if (!synthesisInFlight.current) {
           synthesisInFlight.current = true;
           runArchivalSynthesis();
@@ -113,11 +112,16 @@ const App: React.FC = () => {
 
   const runArchivalSynthesis = async () => {
     const aiKey = process.env.API_KEY;
-    if (!aiKey) return;
+    if (!aiKey) {
+      synthesisInFlight.current = false;
+      return;
+    }
+    
     const ai = new GoogleGenAI({ apiKey: aiKey });
 
     const generateImage = async (prompt: string, label: string): Promise<string | null> => {
       try {
+        setSynthesisStatus(`Restoring ${label}...`);
         const res = await ai.models.generateContent({
           model: 'gemini-2.5-flash-image',
           contents: { parts: [{ text: prompt }] },
@@ -131,49 +135,60 @@ const App: React.FC = () => {
     };
 
     try {
-      if (!(await getAsset('heroImage'))) {
-        const hImg = await generateImage(HERO_PROMPT, 'Hero');
+      // 1. Hero
+      if (!heroImage) {
+        const hImg = await generateImage(HERO_PROMPT, 'Master Hero Plate');
         if (hImg) { setHeroImage(hImg); await saveAsset('heroImage', hImg); }
       }
-      if (!(await getAsset('historyImage'))) {
-        const histImg = await generateImage(HISTORY_PROMPT, 'History');
+
+      // 2. History
+      if (!historyImage) {
+        const histImg = await generateImage(HISTORY_PROMPT, 'Heritage Archives');
         if (histImg) { setHistoryImage(histImg); await saveAsset('historyImage', histImg); }
       }
-      const dbVers = await getAsset('versionImages') || {};
-      const vMap = { ...dbVers };
+
+      // 3. Versions
+      const currentVers = { ...versionImages };
       let vChanged = false;
       for (const v of VERSIONS) {
-        if (!vMap[v.id]) {
-          const data = await generateImage(v.prompt, `Variant ${v.name}`);
-          if (data) { vMap[v.id] = data; vChanged = true; setVersionImages({...vMap}); }
+        if (!currentVers[v.id]) {
+          const data = await generateImage(v.prompt, `Variant: ${v.name}`);
+          if (data) { currentVers[v.id] = data; vChanged = true; setVersionImages({ ...currentVers }); }
         }
       }
-      if (vChanged) await saveAsset('versionImages', vMap);
+      if (vChanged) await saveAsset('versionImages', currentVers);
 
-      const dbOwners = await getAsset('ownerImages') || {};
-      const oMap = { ...dbOwners };
+      // 4. Owners
+      const currentOwners = { ...ownerImages };
       let oChanged = false;
       for (const o of OWNERS) {
-        if (!oMap[o.id]) {
-          const data = await generateImage(o.prompt, `Owner ${o.name}`);
-          if (data) { oMap[o.id] = data; oChanged = true; setOwnerImages({...oMap}); }
+        if (!currentOwners[o.id]) {
+          const data = await generateImage(o.prompt, `Profile: ${o.name}`);
+          if (data) { currentOwners[o.id] = data; oChanged = true; setOwnerImages({ ...currentOwners }); }
         }
       }
-      if (oChanged) await saveAsset('ownerImages', oMap);
+      if (oChanged) await saveAsset('ownerImages', currentOwners);
 
-      const dbGal = await getAsset('galleryImages') || [];
-      const gList = [...dbGal];
+      // 5. Gallery
+      const currentGal = [...galleryImages];
       let gChanged = false;
       for (const gp of GALLERY_PROMPTS) {
-        if (!gList.find(g => g.id === gp.id)) {
-          const url = await generateImage(gp.prompt, `Gallery ${gp.id}`);
-          if (url) { gList.push({ ...gp, url }); gChanged = true; setGalleryImages([...gList]); }
+        if (!currentGal.find(g => g.id === gp.id)) {
+          const url = await generateImage(gp.prompt, `Gallery Asset ${gp.id}`);
+          if (url) { 
+            currentGal.push({ ...gp, url }); 
+            gChanged = true; 
+            setGalleryImages([...currentGal]); 
+          }
         }
       }
-      if (gChanged) await saveAsset('galleryImages', gList);
-      localStorage.setItem(MANIFEST_KEY, 'true');
+      if (gChanged) await saveAsset('galleryImages', currentGal);
+
+      setSynthesisStatus(null);
     } catch (err) {
-      console.error("Archive Error:", err);
+      console.error("Vault Restoration Error:", err);
+      setSynthesisStatus("Restoration Paused");
+      setTimeout(() => setSynthesisStatus(null), 3000);
     } finally {
       synthesisInFlight.current = false;
     }
@@ -182,27 +197,23 @@ const App: React.FC = () => {
   const handleHeroUpdate = async (base64: string) => {
     setHeroImage(base64);
     await saveAsset('heroImage', base64);
-    localStorage.setItem(MANIFEST_KEY, 'true');
   };
 
   const handleHistoryUpdate = async (base64: string) => {
     setHistoryImage(base64);
     await saveAsset('historyImage', base64);
-    localStorage.setItem(MANIFEST_KEY, 'true');
   };
 
   const handleVersionUpdate = async (id: string, base64: string) => {
     const newVers = { ...versionImages, [id]: base64 };
     setVersionImages(newVers);
     await saveAsset('versionImages', newVers);
-    localStorage.setItem(MANIFEST_KEY, 'true');
   };
 
   const handleOwnerUpdate = async (id: string, base64: string) => {
     const newOwners = { ...ownerImages, [id]: base64 };
     setOwnerImages(newOwners);
     await saveAsset('ownerImages', newOwners);
-    localStorage.setItem(MANIFEST_KEY, 'true');
   };
 
   const handleGalleryUpdate = async (id: number, base64: string) => {
@@ -216,7 +227,6 @@ const App: React.FC = () => {
     }
     setGalleryImages(newGal);
     await saveAsset('galleryImages', newGal);
-    localStorage.setItem(MANIFEST_KEY, 'true');
   };
 
   const handleLogout = () => {
@@ -232,8 +242,7 @@ const App: React.FC = () => {
       else sessionStorage.removeItem(ADMIN_KEY);
     }
     if (e.ctrlKey && e.shiftKey && e.key === 'R') {
-      if(window.confirm("Purge Archival Vault?")) {
-        localStorage.removeItem(MANIFEST_KEY);
+      if(window.confirm("Purge Local Vault and Re-Synthesize?")) {
         indexedDB.deleteDatabase(DB_NAME);
         window.location.reload();
       }
@@ -252,6 +261,22 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen selection:bg-rosso selection:text-white outline-none relative" id="top" onKeyDown={handleKeyDown} tabIndex={0}>
+      
+      {/* Vault Status Indicator */}
+      {synthesisStatus && (
+        <div className="fixed bottom-6 right-6 z-[100] bg-black/80 backdrop-blur-md border border-white/10 px-4 py-2 flex items-center space-x-3 text-white shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <Loader2 size={14} className="animate-spin text-rosso" />
+          <span className="text-[9px] uppercase tracking-[0.2em] font-bold">{synthesisStatus}</span>
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="fixed bottom-6 left-6 z-[100] bg-rosso/10 backdrop-blur-md border border-rosso/30 px-4 py-2 flex items-center space-x-3 text-rosso shadow-2xl">
+          <ShieldCheck size={14} />
+          <span className="text-[9px] uppercase tracking-[0.2em] font-bold">Local Overrides Enabled</span>
+        </div>
+      )}
+
       {currentView === 'home' ? (
         <>
           <Header />

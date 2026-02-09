@@ -1,7 +1,7 @@
 
 import React, { useState, useRef } from 'react';
 import SectionTitle from './SectionTitle';
-import { X, Maximize2, Camera } from 'lucide-react';
+import { X, Maximize2, Camera, Loader2 } from 'lucide-react';
 import { GALLERY_PROMPTS } from '../constants';
 
 interface GalleryProps {
@@ -15,14 +15,12 @@ const Gallery: React.FC<GalleryProps> = ({ images = [], onUpdateImage, isAdmin }
   const categories: ('All' | 'Exterior' | 'Interior' | 'Details')[] = ['All', 'Exterior', 'Interior', 'Details'];
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
-  // Filter the base definitions so we always have the correct number of slots
   const filteredPrompts = filter === 'All' 
     ? GALLERY_PROMPTS 
     : GALLERY_PROMPTS.filter(p => p.category === filter);
 
   const [selectedImageId, setSelectedImageId] = useState<number | null>(null);
   
-  // Find actual image data from state for a given prompt ID
   const getImageData = (id: number) => images.find(img => img.id === id);
   const activeImage = getImageData(selectedImageId || -1);
 
@@ -76,13 +74,13 @@ const Gallery: React.FC<GalleryProps> = ({ images = [], onUpdateImage, isAdmin }
                     <div className="absolute inset-0 bg-rosso/0 group-hover:bg-rosso/5 transition-all duration-300 pointer-events-none"></div>
                   </>
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-neutral-950 opacity-20">
-                    <p className="text-[7px] text-white font-bold uppercase tracking-[0.5em] italic">Locked Negative 00{prompt.id}</p>
-                    <p className="text-[6px] text-white/50 uppercase tracking-widest mt-2">{prompt.category}</p>
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-neutral-950/95 relative">
+                    <Loader2 size={24} className="text-rosso/20 animate-spin mb-4" />
+                    <p className="text-[7px] text-white/40 font-bold uppercase tracking-[0.5em] italic">Developing Negative 00{prompt.id}</p>
+                    <p className="text-[6px] text-white/20 uppercase tracking-widest mt-2">{prompt.category}</p>
                   </div>
                 )}
                 
-                {/* Overlay Tools */}
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 space-x-4 pointer-events-none group-hover:pointer-events-auto">
                   {hasImage && (
                     <button 
@@ -98,7 +96,7 @@ const Gallery: React.FC<GalleryProps> = ({ images = [], onUpdateImage, isAdmin }
                       <button 
                         onClick={(e) => { e.stopPropagation(); fileInputRefs.current[prompt.id]?.click(); }}
                         className="bg-rosso text-white p-3 rounded-full shadow-lg transform translate-y-4 group-hover:translate-y-0 transition-transform hover:bg-red-700"
-                        title="Upload/Replace Gallery Asset"
+                        title="Upload/Replace Gallery Asset (Local Only)"
                       >
                         <Camera size={24} />
                       </button>
@@ -115,7 +113,7 @@ const Gallery: React.FC<GalleryProps> = ({ images = [], onUpdateImage, isAdmin }
 
                 {hasImage && (
                   <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                     <p className="text-white text-xs font-serif italic truncate">{prompt.caption}</p>
+                     <p className="text-white text-[10px] font-serif italic truncate">{prompt.caption}</p>
                   </div>
                 )}
               </div>
