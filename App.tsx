@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import Header from './components/Header';
@@ -10,7 +9,7 @@ import Gallery from './components/Gallery';
 import Footer from './components/Footer';
 import VersionDetail from './components/VersionDetail';
 import { VERSIONS, GALLERY_PROMPTS, OWNERS, HISTORY_PROMPT, HERO_PROMPT } from './constants';
-import { Loader2, database as DatabaseIcon, ShieldCheck } from 'lucide-react';
+import { Loader2, ShieldCheck } from 'lucide-react';
 
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
 const STORE_NAME = 'archival_assets';
@@ -98,7 +97,6 @@ const App: React.FC = () => {
 
         setIsInitializing(false);
 
-        // Always attempt to fill missing gaps in the local vault
         if (!synthesisInFlight.current) {
           synthesisInFlight.current = true;
           runArchivalSynthesis();
@@ -121,74 +119,88 @@ const App: React.FC = () => {
 
     const generateImage = async (prompt: string, label: string): Promise<string | null> => {
       try {
-        setSynthesisStatus(`Restoring ${label}...`);
+        setSynthesisStatus(`Synthesizing: ${label}...`);
         const res = await ai.models.generateContent({
           model: 'gemini-2.5-flash-image',
           contents: { parts: [{ text: prompt }] },
-          config: { imageConfig: { aspectRatio: "16:9" }, seed: 1976 }
+          config: { 
+            imageConfig: { aspectRatio: "16:9" } 
+          }
         });
-        const part = res.candidates?.[0]?.content?.parts.find(p => p.inlineData);
-        return part?.inlineData?.data ? `data:image/png;base64,${part.inlineData.data}` : null;
+        
+        const candidates = res.candidates || [];
+        if (candidates.length > 0) {
+          const parts = candidates[0].content?.parts || [];
+          const imagePart = parts.find(p => p.inlineData);
+          if (imagePart?.inlineData?.data) {
+            return `data:image/png;base64,${imagePart.inlineData.data}`;
+          }
+        }
+        return null;
       } catch (e) {
+        console.error(`Archival synthesis failed for ${label}:`, e);
         return null;
       }
     };
 
     try {
-      // 1. Hero
       if (!heroImage) {
-        const hImg = await generateImage(HERO_PROMPT, 'Master Hero Plate');
-        if (hImg) { setHeroImage(hImg); await saveAsset('heroImage', hImg); }
+        const hImg = await generateImage(HERO_PROMPT, 'Hero');
+        if (hImg) { 
+          setHeroImage(hImg); 
+          await saveAsset('heroImage', hImg); 
+        }
       }
 
-      // 2. History
       if (!historyImage) {
-        const histImg = await generateImage(HISTORY_PROMPT, 'Heritage Archives');
-        if (histImg) { setHistoryImage(histImg); await saveAsset('historyImage', histImg); }
+        const histImg = await generateImage(HISTORY_PROMPT, 'History');
+        if (histImg) { 
+          setHistoryImage(histImg); 
+          await saveAsset('historyImage', histImg); 
+        }
       }
 
-      // 3. Versions
       const currentVers = { ...versionImages };
-      let vChanged = false;
       for (const v of VERSIONS) {
         if (!currentVers[v.id]) {
-          const data = await generateImage(v.prompt, `Variant: ${v.name}`);
-          if (data) { currentVers[v.id] = data; vChanged = true; setVersionImages({ ...currentVers }); }
-        }
-      }
-      if (vChanged) await saveAsset('versionImages', currentVers);
-
-      // 4. Owners
-      const currentOwners = { ...ownerImages };
-      let oChanged = false;
-      for (const o of OWNERS) {
-        if (!currentOwners[o.id]) {
-          const data = await generateImage(o.prompt, `Profile: ${o.name}`);
-          if (data) { currentOwners[o.id] = data; oChanged = true; setOwnerImages({ ...currentOwners }); }
-        }
-      }
-      if (oChanged) await saveAsset('ownerImages', currentOwners);
-
-      // 5. Gallery
-      const currentGal = [...galleryImages];
-      let gChanged = false;
-      for (const gp of GALLERY_PROMPTS) {
-        if (!currentGal.find(g => g.id === gp.id)) {
-          const url = await generateImage(gp.prompt, `Gallery Asset ${gp.id}`);
-          if (url) { 
-            currentGal.push({ ...gp, url }); 
-            gChanged = true; 
-            setGalleryImages([...currentGal]); 
+          const data = await generateImage(v.prompt, `Model ${v.name}`);
+          if (data) { 
+            currentVers[v.id] = data; 
+            setVersionImages({ ...currentVers }); 
+            await saveAsset('versionImages', currentVers); 
           }
         }
       }
-      if (gChanged) await saveAsset('galleryImages', currentGal);
+
+      const currentOwners = { ...ownerImages };
+      for (const o of OWNERS) {
+        if (!currentOwners[o.id]) {
+          const data = await generateImage(o.prompt, `Owner ${o.name}`);
+          if (data) { 
+            currentOwners[o.id] = data; 
+            setOwnerImages({ ...currentOwners }); 
+            await saveAsset('ownerImages', currentOwners);
+          }
+        }
+      }
+
+      const currentGal = [...galleryImages];
+      for (const gp of GALLERY_PROMPTS) {
+        if (!currentGal.find(g => g.id === gp.id)) {
+          const url = await generateImage(gp.prompt, `Gallery ${gp.id}`);
+          if (url) { 
+            currentGal.push({ ...gp, url }); 
+            setGalleryImages([...currentGal]); 
+            await saveAsset('galleryImages', currentGal);
+          }
+        }
+      }
 
       setSynthesisStatus(null);
     } catch (err) {
-      console.error("Vault Restoration Error:", err);
+      console.error("Vault Restoration Interrupted:", err);
       setSynthesisStatus("Restoration Paused");
-      setTimeout(() => setSynthesisStatus(null), 3000);
+      setTimeout(() => setSynthesisStatus(null), 5000);
     } finally {
       synthesisInFlight.current = false;
     }
@@ -223,7 +235,7 @@ const App: React.FC = () => {
       newGal = galleryImages.map(img => img.id === id ? { ...img, url: base64 } : img);
     } else {
       const promptInfo = GALLERY_PROMPTS.find(p => p.id === id);
-      newGal = [...galleryImages, { ...promptInfo, url: base64 }];
+      newGal = [...galleryImages, { ...promptInfo!, url: base64 }];
     }
     setGalleryImages(newGal);
     await saveAsset('galleryImages', newGal);
@@ -252,7 +264,10 @@ const App: React.FC = () => {
   if (isInitializing) {
     return (
       <div className="h-screen w-full bg-black flex items-center justify-center">
-        <div className="w-12 h-[1px] bg-rosso animate-pulse"></div>
+        <div className="flex flex-col items-center">
+           <div className="w-12 h-[1px] bg-rosso animate-pulse mb-4"></div>
+           <span className="text-[10px] text-white/20 uppercase tracking-[0.4em]">Initializing Archive</span>
+        </div>
       </div>
     );
   }
@@ -260,20 +275,19 @@ const App: React.FC = () => {
   const selectedVersion = VERSIONS.find(v => v.id === currentView);
 
   return (
-    <div className="min-h-screen selection:bg-rosso selection:text-white outline-none relative" id="top" onKeyDown={handleKeyDown} tabIndex={0}>
+    <div className="min-h-screen selection:bg-rosso selection:text-white outline-none relative bg-white" id="top" onKeyDown={handleKeyDown} tabIndex={0}>
       
-      {/* Vault Status Indicator */}
       {synthesisStatus && (
-        <div className="fixed bottom-6 right-6 z-[100] bg-black/80 backdrop-blur-md border border-white/10 px-4 py-2 flex items-center space-x-3 text-white shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <Loader2 size={14} className="animate-spin text-rosso" />
-          <span className="text-[9px] uppercase tracking-[0.2em] font-bold">{synthesisStatus}</span>
+        <div className="fixed bottom-6 right-6 z-[100] bg-black/90 backdrop-blur-xl border border-white/10 px-6 py-3 flex items-center space-x-4 text-white shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <Loader2 size={16} className="animate-spin text-rosso" />
+          <span className="text-[10px] uppercase tracking-[0.2em] font-bold">{synthesisStatus}</span>
         </div>
       )}
 
       {isAdmin && (
         <div className="fixed bottom-6 left-6 z-[100] bg-rosso/10 backdrop-blur-md border border-rosso/30 px-4 py-2 flex items-center space-x-3 text-rosso shadow-2xl">
           <ShieldCheck size={14} />
-          <span className="text-[9px] uppercase tracking-[0.2em] font-bold">Local Overrides Enabled</span>
+          <span className="text-[9px] uppercase tracking-[0.2em] font-bold">Admin Privileges Active</span>
         </div>
       )}
 

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Menu, X } from 'lucide-react';
 
@@ -25,7 +24,7 @@ const Header: React.FC = () => {
 
     const element = document.querySelector(href);
     if (element) {
-      const offset = 80; // Approximate height of the sticky header
+      const offset = 80;
       const elementPosition = element.getBoundingClientRect().top;
       const offsetPosition = elementPosition + window.pageYOffset - offset;
 
@@ -57,7 +56,6 @@ const Header: React.FC = () => {
           </span>
         </a>
 
-        {/* Desktop Nav */}
         <div className="hidden md:flex space-x-12">
           {navLinks.map((link) => (
             <a
@@ -71,13 +69,11 @@ const Header: React.FC = () => {
           ))}
         </div>
 
-        {/* Mobile Toggle */}
         <button className="md:hidden text-white" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
           {mobileMenuOpen ? <X size={28} /> : <Menu size={28} />}
         </button>
       </div>
 
-      {/* Mobile Menu */}
       {mobileMenuOpen && (
         <div className="absolute top-full left-0 w-full bg-black border-t border-rosso/20 md:hidden animate-in slide-in-from-top duration-300">
           <div className="flex flex-col p-8 space-y-6">
