@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from "@supabase/supabase-js";
 import { GoogleGenAI } from "@google/genai";
 import Header from './components/Header';
@@ -13,13 +12,17 @@ import VersionDetail from './components/VersionDetail';
 import { VERSIONS, GALLERY_PROMPTS, OWNERS, HERO_PROMPT, HISTORY_PROMPT } from './constants';
 import { ShieldCheck, Loader2 } from 'lucide-react';
 
-// Supabase Initialization
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
-const supabase = (supabaseUrl && supabaseAnonKey) ? createClient(supabaseUrl, supabaseAnonKey) : null;
-
-// Gemini Initialization
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Safe Initialization Helpers
+const getSupabase = () => {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  try {
+    return createClient(url, key);
+  } catch (e) {
+    return null;
+  }
+};
 
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
 const STORE_NAME = 'archival_assets';
@@ -62,25 +65,6 @@ const saveLocalAsset = async (key: string, value: any): Promise<void> => {
   } catch (e) { console.error("Archive Error:", e); }
 };
 
-const generateAIImage = async (prompt: string): Promise<string> => {
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
-      contents: { parts: [{ text: prompt }] },
-    });
-    
-    for (const part of response.candidates[0].content.parts) {
-      if (part.inlineData) {
-        return `data:image/png;base64,${part.inlineData.data}`;
-      }
-    }
-    throw new Error("No image generated");
-  } catch (err) {
-    console.error("AI Generation Failed:", err);
-    return '';
-  }
-};
-
 const App: React.FC = () => {
   const [heroImage, setHeroImage] = useState<string>('');
   const [historyImage, setHistoryImage] = useState<string>('');
@@ -93,12 +77,43 @@ const App: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentView, setCurrentView] = useState<'home' | string>('home');
 
+  const supabase = useMemo(() => getSupabase(), []);
+
   const persistAsset = useCallback(async (key: string, data: any) => {
     await saveLocalAsset(key, data);
     if (supabase) {
       try {
         await supabase.from('assets').upsert({ id: key, data: data });
       } catch (err) { console.warn(`Supabase sync failed for ${key}`, err); }
+    }
+  }, [supabase]);
+
+  // Always instantiate GoogleGenAI right before the API call to ensure the latest key/state is used
+  const generateAIImage = useCallback(async (prompt: string): Promise<string> => {
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) {
+      console.warn("API Key is missing from the environment.");
+      return '';
+    }
+    
+    try {
+      // Create a fresh instance for the call
+      const ai = new GoogleGenAI({ apiKey });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: { parts: [{ text: prompt }] },
+      });
+      
+      const parts = response.candidates?.[0]?.content?.parts || [];
+      for (const part of parts) {
+        if (part.inlineData) {
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
+      }
+      return '';
+    } catch (err) {
+      console.error("AI Generation Failed:", err);
+      return '';
     }
   }, []);
 
@@ -109,6 +124,7 @@ const App: React.FC = () => {
     own: Record<string, string>, 
     gal: any[]
   ) => {
+    if (!process.env.API_KEY) return;
     setIsRestoring(true);
     
     // Fill Hero
@@ -128,7 +144,11 @@ const App: React.FC = () => {
     for (const v of VERSIONS) {
       if (!newVers[v.id]) {
         const img = await generateAIImage(v.prompt);
-        if (img) { newVers[v.id] = img; setVersionImages({ ...newVers }); await persistAsset('versionImages', newVers); }
+        if (img) { 
+          newVers[v.id] = img; 
+          setVersionImages(prev => ({ ...prev, [v.id]: img })); 
+          await persistAsset('versionImages', newVers); 
+        }
       }
     }
 
@@ -137,7 +157,11 @@ const App: React.FC = () => {
     for (const o of OWNERS) {
       if (!newOwners[o.id]) {
         const img = await generateAIImage(o.prompt);
-        if (img) { newOwners[o.id] = img; setOwnerImages({ ...newOwners }); await persistAsset('ownerImages', newOwners); }
+        if (img) { 
+          newOwners[o.id] = img; 
+          setOwnerImages(prev => ({ ...prev, [o.id]: img })); 
+          await persistAsset('ownerImages', newOwners); 
+        }
       }
     }
 
@@ -156,7 +180,7 @@ const App: React.FC = () => {
     }
     
     setIsRestoring(false);
-  }, [persistAsset]);
+  }, [generateAIImage, persistAsset]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -202,7 +226,7 @@ const App: React.FC = () => {
 
         setIsInitializing(false);
         
-        // If not initialized yet, start auto-fill for a better visitor experience
+        // If not initialized yet, start auto-fill
         if (!h || !hist || Object.keys(finalVers).length < VERSIONS.length || finalGal.length < GALLERY_PROMPTS.length) {
           autoFillMissingAssets(h, hist, finalVers, finalOwn, finalGal);
         }
@@ -212,7 +236,7 @@ const App: React.FC = () => {
       }
     };
     bootstrapArchive();
-  }, [autoFillMissingAssets]);
+  }, [supabase, autoFillMissingAssets]);
 
   const handleHeroUpdate = (img: string) => { setHeroImage(img); persistAsset('heroImage', img); };
   const handleHistoryUpdate = (img: string) => { setHistoryImage(img); persistAsset('historyImage', img); };
@@ -227,9 +251,9 @@ const App: React.FC = () => {
     persistAsset('ownerImages', n);
   };
   const handleGalleryUpdate = (id: number, img: string) => {
-    const exists = galleryImages.some(img => img.id === id);
+    const exists = galleryImages.some(g => g.id === id);
     let newGal = exists 
-      ? galleryImages.map(img => img.id === id ? { ...img, url: img } : img)
+      ? galleryImages.map(g => g.id === id ? { ...g, url: img } : g)
       : [...galleryImages, { ...GALLERY_PROMPTS.find(p => p.id === id)!, url: img }];
     setGalleryImages(newGal);
     persistAsset('galleryImages', newGal);
