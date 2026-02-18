@@ -10,13 +10,19 @@ import Gallery from './components/Gallery';
 import Footer from './components/Footer';
 import VersionDetail from './components/VersionDetail';
 import { VERSIONS, GALLERY_PROMPTS, OWNERS, HERO_PROMPT, HISTORY_PROMPT } from './constants';
-import { ShieldCheck, Loader2, Database, RefreshCw } from 'lucide-react';
+import { ShieldCheck, Loader2, Database, RefreshCw, AlertTriangle } from 'lucide-react';
 
 const getSupabase = () => {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_ANON_KEY;
-  if (!url || !key) return null;
-  try { return createClient(url, key); } catch (e) { return null; }
+  if (!url || !key) {
+    console.warn("Supabase credentials missing. Remote sync is disabled.");
+    return null;
+  }
+  try { return createClient(url, key); } catch (e) { 
+    console.error("Supabase init error:", e);
+    return null; 
+  }
 };
 
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
@@ -55,7 +61,7 @@ const saveLocalAsset = async (key: string, value: any): Promise<void> => {
       transaction.objectStore(STORE_NAME).put(value, key);
       transaction.oncomplete = () => resolve();
     });
-  } catch (e) { console.error("Archive Error:", e); }
+  } catch (e) { console.error("IndexedDB Error:", e); }
 };
 
 const App: React.FC = () => {
@@ -75,7 +81,10 @@ const App: React.FC = () => {
   const supabase = useMemo(() => getSupabase(), []);
 
   const persistAsset = useCallback(async (key: string, data: any) => {
+    // Immediate local persistence
     await saveLocalAsset(key, data);
+    
+    // Cloud sync in background
     if (supabase) {
       const { error } = await supabase.from('assets').upsert({ id: key, data: data });
       if (error) console.error(`Sync error for ${key}:`, error.message);
@@ -94,19 +103,30 @@ const App: React.FC = () => {
       const parts = response.candidates?.[0]?.content?.parts || [];
       for (const part of parts) if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
       return '';
-    } catch (err) { return ''; }
+    } catch (err) { 
+      console.error("AI Generation Error:", err);
+      return ''; 
+    }
   }, []);
 
   const forceSyncToCloud = async () => {
     if (!supabase || !isAdmin) return;
     setSyncing(true);
-    const keys = ['heroImage', 'historyImage', 'versionImages', 'ownerImages', 'galleryImages'];
-    for (const key of keys) {
-      const local = await getLocalAsset(key);
-      if (local) await supabase.from('assets').upsert({ id: key, data: local });
+    try {
+      const keys = ['heroImage', 'historyImage', 'versionImages', 'ownerImages', 'galleryImages'];
+      for (const key of keys) {
+        const local = await getLocalAsset(key);
+        if (local) {
+          const { error } = await supabase.from('assets').upsert({ id: key, data: local });
+          if (error) throw error;
+        }
+      }
+      alert("Archive synchronized successfully.");
+    } catch (err: any) {
+      alert("Sync failed: " + err.message);
+    } finally {
+      setSyncing(false);
     }
-    setSyncing(false);
-    alert("Global archive synchronized.");
   };
 
   const autoFillMissingAssets = useCallback(async (h: string, hist: string, vers: any, own: any, gal: any) => {
@@ -130,32 +150,50 @@ const App: React.FC = () => {
     const bootstrap = async () => {
       let remoteMap: Record<string, any> = {};
       if (supabase) {
-        const { data, error } = await supabase.from('assets').select('*');
-        if (!error && data) {
-          setDbStatus('online');
-          data.forEach(row => remoteMap[row.id] = row.data);
-        } else {
+        try {
+          const { data, error } = await supabase.from('assets').select('*');
+          if (!error && data) {
+            setDbStatus('online');
+            data.forEach(row => remoteMap[row.id] = row.data);
+          } else {
+            console.error("Supabase select error:", error?.message);
+            setDbStatus('offline');
+          }
+        } catch (e) {
+          console.error("Supabase connection fatal error:", e);
           setDbStatus('offline');
         }
+      } else {
+        setDbStatus('offline');
       }
 
       const load = async (key: string) => {
-        if (remoteMap[key]) { await saveLocalAsset(key, remoteMap[key]); return remoteMap[key]; }
+        // Preference: Remote (Source of Truth) -> Local (Cache)
+        if (remoteMap[key]) { 
+          await saveLocalAsset(key, remoteMap[key]); 
+          return remoteMap[key]; 
+        }
         return await getLocalAsset(key);
       };
 
-      const [h, hist, vers, own, gal] = await Promise.all([
-        load('heroImage'), load('historyImage'), load('versionImages'), load('ownerImages'), load('galleryImages')
-      ]);
+      try {
+        const [h, hist, vers, own, gal] = await Promise.all([
+          load('heroImage'), load('historyImage'), load('versionImages'), load('ownerImages'), load('galleryImages')
+        ]);
 
-      if (h) setHeroImage(h);
-      if (hist) setHistoryImage(hist);
-      setVersionImages(vers || {});
-      setOwnerImages(own || {});
-      setGalleryImages(gal || []);
-      setIsInitializing(false);
+        if (h) setHeroImage(h);
+        if (hist) setHistoryImage(hist);
+        setVersionImages(vers || {});
+        setOwnerImages(own || {});
+        setGalleryImages(gal || []);
 
-      if (!h || !hist) autoFillMissingAssets(h, hist, vers, own, gal);
+        setIsInitializing(false);
+
+        if (!h || !hist) autoFillMissingAssets(h, hist, vers, own, gal);
+      } catch (e) {
+        console.error("Bootstrap failure:", e);
+        setIsInitializing(false);
+      }
     };
     bootstrap();
   }, [supabase, autoFillMissingAssets]);
@@ -176,8 +214,9 @@ const App: React.FC = () => {
   };
 
   if (isInitializing) return (
-    <div className="h-screen w-full bg-black flex items-center justify-center">
-      <div className="w-12 h-[1px] bg-rosso animate-pulse"></div>
+    <div className="h-screen w-full bg-black flex flex-col items-center justify-center space-y-6">
+      <div className="w-16 h-[1px] bg-rosso animate-pulse"></div>
+      <span className="text-[10px] text-white/20 uppercase tracking-[0.5em] animate-pulse">Initializing Archive</span>
     </div>
   );
 
@@ -186,22 +225,31 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-white">
       {isAdmin && (
-        <div className="fixed bottom-10 left-10 z-[100] bg-black border border-white/20 p-4 flex flex-col space-y-3 shadow-2xl">
+        <div className="fixed bottom-10 left-10 z-[100] bg-black border border-white/20 p-5 flex flex-col space-y-4 shadow-2xl backdrop-blur-xl">
           <div className="flex items-center space-x-3 text-rosso">
-            <ShieldCheck size={16} />
-            <span className="text-[10px] uppercase tracking-widest font-bold">Admin Active</span>
+            <ShieldCheck size={18} />
+            <span className="text-[11px] uppercase tracking-widest font-bold">Override Protocol: Active</span>
           </div>
-          <div className="flex items-center space-x-2 text-[8px] uppercase tracking-widest text-white/40">
-            <Database size={10} className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso'} />
-            <span>Cloud: {dbStatus}</span>
+          <div className="flex flex-col space-y-2">
+            <div className="flex items-center space-x-2 text-[9px] uppercase tracking-widest">
+              <Database size={12} className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso'} />
+              <span className="text-white/40">Remote Repository:</span>
+              <span className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso'}>{dbStatus}</span>
+            </div>
+            {dbStatus === 'offline' && (
+              <div className="flex items-center space-x-2 text-[8px] text-rosso/70 bg-rosso/5 p-2 border border-rosso/20">
+                <AlertTriangle size={10} />
+                <span>Check Netlify Environment Variables</span>
+              </div>
+            )}
           </div>
           <button 
             onClick={forceSyncToCloud}
-            disabled={syncing}
-            className="flex items-center space-x-2 bg-white/5 hover:bg-rosso text-white px-3 py-2 text-[9px] uppercase tracking-widest transition-colors"
+            disabled={syncing || dbStatus === 'offline'}
+            className="flex items-center justify-center space-x-2 bg-white/5 hover:bg-rosso disabled:opacity-30 disabled:hover:bg-white/5 text-white px-4 py-3 text-[10px] uppercase tracking-widest transition-all"
           >
-            <RefreshCw size={10} className={syncing ? 'animate-spin' : ''} />
-            <span>{syncing ? 'Syncing...' : 'Force Cloud Sync'}</span>
+            <RefreshCw size={12} className={syncing ? 'animate-spin' : ''} />
+            <span>{syncing ? 'Synchronizing...' : 'Force Cloud Sync'}</span>
           </button>
         </div>
       )}
