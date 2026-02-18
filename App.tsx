@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { createClient } from "@supabase/supabase-js";
 import Header from './components/Header';
@@ -91,6 +92,7 @@ const App: React.FC = () => {
     if (params.get('admin') === 'true') {
       sessionStorage.setItem(ADMIN_KEY, 'true');
       setIsAdmin(true);
+      // Clean URL for aesthetics but keep session
       window.history.replaceState({}, document.title, window.location.pathname);
     } else {
       setIsAdmin(sessionStorage.getItem(ADMIN_KEY) === 'true');
@@ -185,12 +187,7 @@ const App: React.FC = () => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.ctrlKey && e.shiftKey && e.key === 'A') {
-      const newState = !isAdmin;
-      setIsAdmin(newState);
-      if (newState) sessionStorage.setItem(ADMIN_KEY, 'true');
-      else sessionStorage.removeItem(ADMIN_KEY);
-    }
+    // Only secret combination for developers to purge local cache
     if (e.ctrlKey && e.shiftKey && e.key === 'R') {
       if(window.confirm("Purge Local Vault and Re-Sync with Global?")) {
         indexedDB.deleteDatabase(DB_NAME);
@@ -205,7 +202,7 @@ const App: React.FC = () => {
         <div className="flex flex-col items-center">
            <div className="w-12 h-[1px] bg-rosso animate-pulse mb-4"></div>
            <span className="text-[10px] text-white/20 uppercase tracking-[0.4em]">
-             {isAdmin ? "Establishing Sync" : "Accessing Archive"}
+             Accessing Archive
            </span>
         </div>
       </div>
@@ -217,11 +214,11 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen selection:bg-rosso/30 selection:text-rosso outline-none relative bg-white" id="top" onKeyDown={handleKeyDown} tabIndex={0}>
       
-      {/* Admin Privilege Badge should only appear to admin */}
+      {/* Admin Privilege Badge - Strictly controlled by URL parameter ?admin=true */}
       {isAdmin && (
-        <div className="fixed bottom-6 left-6 z-[100] bg-black border border-white px-4 py-2 flex items-center space-x-3 text-rosso shadow-2xl">
-          <ShieldCheck size={14} className="text-rosso" />
-          <span className="text-[11px] uppercase tracking-[0.1em] font-bold text-rosso">LOCAL OVERRIDES ENABLED</span>
+        <div className="fixed bottom-10 left-10 z-[100] bg-black border border-white px-5 py-3 flex items-center space-x-4 text-rosso shadow-[0_0_30px_rgba(255,40,0,0.1)]">
+          <ShieldCheck size={16} className="text-rosso" />
+          <span className="text-[11px] uppercase tracking-[0.2em] font-bold text-rosso">LOCAL OVERRIDES ENABLED</span>
         </div>
       )}
 

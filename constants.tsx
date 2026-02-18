@@ -1,3 +1,4 @@
+
 import { CarVersion, Owner, GalleryImage } from './types';
 
 export const COLORS = {
@@ -48,7 +49,7 @@ export const VERSIONS: (CarVersion & { prompt: string })[] = [
     name: 'Ferrari 400i',
     year: '1979–1985',
     prompt: "Frontal three-quarter view of a silver 1980 Ferrari 400i, sharp angular edges, Pininfarina logo on the lower side panel, executive 1980s grand tourer look, professional studio lighting.",
-    description: 'The evolution. Introducing Bosch K-Jetronic fuel injection, the 400i refined the V12’s delivery while meeting stricter global emissions standards.',
+    description: 'The evolution. Refined and sophisticated, the 400i introduced Bosch K-Jetronic fuel injection to Maranello’s grand tourer, balancing V12 power with modern refinement.',
     imageUrl: '',
     specs: {
       engine: '4.8L V12 (Injected)',
