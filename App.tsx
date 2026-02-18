@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI } from "@google/genai";
+import React, { useState, useEffect } from 'react';
 import { createClient } from "@supabase/supabase-js";
 import Header from './components/Header';
 import Hero from './components/Hero';
@@ -9,8 +8,8 @@ import Owners from './components/Owners';
 import Gallery from './components/Gallery';
 import Footer from './components/Footer';
 import VersionDetail from './components/VersionDetail';
-import { VERSIONS, GALLERY_PROMPTS, OWNERS, HISTORY_PROMPT, HERO_PROMPT } from './constants';
-import { Loader2, ShieldCheck } from 'lucide-react';
+import { VERSIONS, GALLERY_PROMPTS, OWNERS } from './constants';
+import { ShieldCheck } from 'lucide-react';
 
 // Supabase Initialization - Safe guard against missing keys
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -74,16 +73,10 @@ const App: React.FC = () => {
   
   const [isInitializing, setIsInitializing] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [synthesisStatus, setSynthesisStatus] = useState<string | null>(null);
   const [currentView, setCurrentView] = useState<'home' | string>('home');
-  const synthesisInFlight = useRef(false);
 
-  // Persistence Wrapper: Saves to both Supabase (Global) and IndexedDB (Local)
   const persistAsset = async (key: string, data: any) => {
-    // 1. Save Locally
     await saveLocalAsset(key, data);
-    
-    // 2. Save to Supabase for Global sync
     if (supabase) {
       try {
         await supabase.from('assets').upsert({ id: key, data: data });
@@ -105,11 +98,8 @@ const App: React.FC = () => {
 
     const bootstrapArchive = async () => {
       try {
-        setSynthesisStatus(supabase ? "Syncing with Global Vault..." : "Accessing Local Archive...");
-        
         let assetsMap: Record<string, any> = {};
 
-        // 1. Try fetching everything from Supabase first if available
         if (supabase) {
           try {
             const { data: remoteAssets } = await supabase.from('assets').select('*');
@@ -123,10 +113,8 @@ const App: React.FC = () => {
           }
         }
 
-        // 2. Helper to get asset (Prefer Supabase, fallback to IndexedDB)
         const getMergedAsset = async (key: string) => {
           if (assetsMap[key]) {
-            // Update local cache if we found it on Supabase but it might be missing locally
             await saveLocalAsset(key, assetsMap[key]);
             return assetsMap[key];
           }
@@ -148,124 +136,13 @@ const App: React.FC = () => {
         if (gal) setGalleryImages(gal || []);
 
         setIsInitializing(false);
-        setSynthesisStatus(null);
-
-        if (!synthesisInFlight.current) {
-          synthesisInFlight.current = true;
-          runArchivalSynthesis();
-        }
       } catch (err) {
         console.error("Bootstrap error:", err);
         setIsInitializing(false);
-        setSynthesisStatus(null);
       }
     };
     bootstrapArchive();
   }, []);
-
-  const runArchivalSynthesis = async () => {
-    const aiKey = process.env.API_KEY;
-    if (!aiKey) {
-      synthesisInFlight.current = false;
-      return;
-    }
-    
-    const ai = new GoogleGenAI({ apiKey: aiKey });
-
-    const generateImage = async (prompt: string, label: string): Promise<string | null> => {
-      try {
-        setSynthesisStatus(`Synthesizing: ${label}...`);
-        const res = await ai.models.generateContent({
-          model: 'gemini-2.5-flash-image',
-          contents: { parts: [{ text: prompt }] },
-          config: { 
-            imageConfig: { aspectRatio: "16:9" } 
-          }
-        });
-        
-        const candidates = res.candidates || [];
-        if (candidates.length > 0) {
-          const parts = candidates[0].content?.parts || [];
-          const imagePart = parts.find(p => p.inlineData);
-          if (imagePart?.inlineData?.data) {
-            return `data:image/png;base64,${imagePart.inlineData.data}`;
-          }
-        }
-        return null;
-      } catch (e) {
-        console.error(`Archival synthesis failed for ${label}:`, e);
-        return null;
-      }
-    };
-
-    try {
-      if (!heroImage) {
-        const hImg = await generateImage(HERO_PROMPT, 'Hero');
-        if (hImg) { 
-          setHeroImage(hImg); 
-          await persistAsset('heroImage', hImg); 
-        }
-      }
-
-      if (!historyImage) {
-        const histImg = await generateImage(HISTORY_PROMPT, 'History');
-        if (histImg) { 
-          setHistoryImage(histImg); 
-          await persistAsset('historyImage', histImg); 
-        }
-      }
-
-      const currentVers = { ...versionImages };
-      let vChanged = false;
-      for (const v of VERSIONS) {
-        if (!currentVers[v.id]) {
-          const data = await generateImage(v.prompt, `Model ${v.name}`);
-          if (data) { 
-            currentVers[v.id] = data; 
-            setVersionImages({ ...currentVers }); 
-            vChanged = true;
-          }
-        }
-      }
-      if (vChanged) await persistAsset('versionImages', currentVers);
-
-      const currentOwners = { ...ownerImages };
-      let oChanged = false;
-      for (const o of OWNERS) {
-        if (!currentOwners[o.id]) {
-          const data = await generateImage(o.prompt, `Owner ${o.name}`);
-          if (data) { 
-            currentOwners[o.id] = data; 
-            setOwnerImages({ ...currentOwners }); 
-            oChanged = true;
-          }
-        }
-      }
-      if (oChanged) await persistAsset('ownerImages', currentOwners);
-
-      const currentGal = [...galleryImages];
-      let gChanged = false;
-      for (const gp of GALLERY_PROMPTS) {
-        if (!currentGal.find(g => g.id === gp.id)) {
-          const url = await generateImage(gp.prompt, `Gallery ${gp.id}`);
-          if (url) { 
-            currentGal.push({ ...gp, url }); 
-            setGalleryImages([...currentGal]); 
-            gChanged = true;
-          }
-        }
-      }
-      if (gChanged) await persistAsset('galleryImages', currentGal);
-
-      setSynthesisStatus(null);
-    } catch (err) {
-      console.error("Vault Restoration Interrupted:", err);
-      setSynthesisStatus("Restoration Paused");
-      setTimeout(() => setSynthesisStatus(null), 5000);
-    } finally {
-      synthesisInFlight.current = false;
-    }
-  };
 
   const handleHeroUpdate = async (base64: string) => {
     setHeroImage(base64);
@@ -327,7 +204,9 @@ const App: React.FC = () => {
       <div className="h-screen w-full bg-black flex items-center justify-center">
         <div className="flex flex-col items-center">
            <div className="w-12 h-[1px] bg-rosso animate-pulse mb-4"></div>
-           <span className="text-[10px] text-white/20 uppercase tracking-[0.4em]">Establishing Sync</span>
+           <span className="text-[10px] text-white/20 uppercase tracking-[0.4em]">
+             {isAdmin ? "Establishing Sync" : "Accessing Archive"}
+           </span>
         </div>
       </div>
     );
@@ -336,19 +215,13 @@ const App: React.FC = () => {
   const selectedVersion = VERSIONS.find(v => v.id === currentView);
 
   return (
-    <div className="min-h-screen selection:bg-rosso selection:text-white outline-none relative bg-white" id="top" onKeyDown={handleKeyDown} tabIndex={0}>
+    <div className="min-h-screen selection:bg-rosso/30 selection:text-rosso outline-none relative bg-white" id="top" onKeyDown={handleKeyDown} tabIndex={0}>
       
-      {synthesisStatus && (
-        <div className="fixed bottom-6 right-6 z-[100] bg-black/90 backdrop-blur-xl border border-white/10 px-6 py-3 flex items-center space-x-4 text-white shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <Loader2 size={16} className="animate-spin text-rosso" />
-          <span className="text-[10px] uppercase tracking-[0.2em] font-bold">{synthesisStatus}</span>
-        </div>
-      )}
-
+      {/* Admin Privilege Badge should only appear to admin */}
       {isAdmin && (
-        <div className="fixed bottom-6 left-6 z-[100] bg-rosso/10 backdrop-blur-md border border-rosso/30 px-4 py-2 flex items-center space-x-3 text-rosso shadow-2xl">
-          <ShieldCheck size={14} />
-          <span className="text-[9px] uppercase tracking-[0.2em] font-bold">Admin Privileges Active</span>
+        <div className="fixed bottom-6 left-6 z-[100] bg-black border border-white px-4 py-2 flex items-center space-x-3 text-rosso shadow-2xl">
+          <ShieldCheck size={14} className="text-rosso" />
+          <span className="text-[11px] uppercase tracking-[0.1em] font-bold text-rosso">LOCAL OVERRIDES ENABLED</span>
         </div>
       )}
 

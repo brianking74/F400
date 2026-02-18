@@ -1,4 +1,3 @@
-
 import { CarVersion, Owner, GalleryImage } from './types';
 
 export const COLORS = {
@@ -21,7 +20,7 @@ export const VERSIONS: (CarVersion & { prompt: string })[] = [
     name: 'Ferrari 400 GT',
     year: '1976–1979',
     prompt: "Side profile of a red 1976 Ferrari 400 GT, sharp horizontal lines, long front hood, flat rear trunk deck, 1970s Pininfarina wedge shape, star-shaped 5-spoke wheels, professional automotive photography.",
-    description: 'The purist’s choice. Equipped with a 5-speed manual gearbox and six Weber carburetors, it offered an unfiltered V12 experience for those who preferred total control.',
+    description: 'Equipped with a 5-speed manual gearbox and six Weber carburetors, it offered an unfiltered V12 experience for those who preferred total control.',
     imageUrl: '',
     specs: {
       engine: '4.8L Colombo V12',
@@ -35,7 +34,7 @@ export const VERSIONS: (CarVersion & { prompt: string })[] = [
     name: 'Ferrari 400 Automatic',
     year: '1976–1979',
     prompt: "A 1978 Ferrari 400 Automatic in Rosso Corsa, rear three-quarter view, showcasing the four round circular red taillights and quad exhaust pipes, angular 1970s bodywork, parked in a luxury Italian villa driveway.",
-    description: 'A historic milestone. The first production Ferrari to offer a factory automatic transmission, utilizing a robust GM Turbo-Hydramatic 3-speed for ultimate grand touring luxury.',
+    description: "The purist's choice. The first production Ferrari to offer a factory automatic transmission, utilizing a robust GM Turbo-Hydramatic 3-speed for ultimate grand touring luxury.",
     imageUrl: '',
     specs: {
       engine: '4.8L Colombo V12',

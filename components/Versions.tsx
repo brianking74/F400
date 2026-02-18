@@ -1,4 +1,3 @@
-
 import React, { useRef } from 'react';
 import SectionTitle from './SectionTitle';
 import { VERSIONS } from '../constants';
@@ -70,22 +69,22 @@ const Versions: React.FC<VersionsProps> = ({ images = {}, onNavigate, onUpdateIm
                 )}
               </div>
               
-              <div className="p-8 flex-grow flex flex-col">
-                <h3 className="text-2xl font-serif mb-4 group-hover:text-rosso transition-colors">{v.name}</h3>
-                <p className="text-gray-600 mb-8 leading-relaxed text-sm">
+              <div className="p-8 flex-grow flex flex-col bg-white">
+                <h3 className="text-2xl font-serif mb-4 group-hover:text-rosso transition-colors text-black">{v.name}</h3>
+                <p className="text-gray-600 group-hover:text-gray-900 mb-8 leading-relaxed text-sm transition-colors duration-300">
                   {v.description}
                 </p>
                 
                 <div className="space-y-4 mb-10 pt-6 border-t border-gray-100 mt-auto">
-                  <div className="flex items-center text-xs">
+                  <div className="flex items-center text-xs text-gray-700">
                     <Zap size={14} className="text-rosso mr-3 shrink-0" />
                     <span className="font-semibold mr-2">Engine:</span> {v.specs.engine}
                   </div>
-                  <div className="flex items-center text-xs">
+                  <div className="flex items-center text-xs text-gray-700">
                     <Settings size={14} className="text-rosso mr-3 shrink-0" />
                     <span className="font-semibold mr-2">Transmission:</span> {v.specs.transmission}
                   </div>
-                  <div className="flex items-center text-xs">
+                  <div className="flex items-center text-xs text-gray-700">
                     <HistoryIcon size={14} className="text-rosso mr-3 shrink-0" />
                     <span className="font-semibold mr-2">Top Speed:</span> {v.specs.topSpeed}
                   </div>

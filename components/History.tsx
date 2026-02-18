@@ -1,4 +1,3 @@
-
 import React, { useRef } from 'react';
 import SectionTitle from './SectionTitle';
 import { Camera } from 'lucide-react';
@@ -31,16 +30,16 @@ const History: React.FC<HistoryProps> = ({ customImage, onUpdateImage, isAdmin }
 
         <div className="grid md:grid-cols-2 gap-16 items-center">
           <div className="space-y-6 text-gray-800 leading-relaxed text-lg">
-            <p>
+            <p className="text-gray-800">
               Introduced at the <span className="font-semibold">1976 Paris Motor Show</span>, the Ferrari 400 was the sophisticated successor to the 365 GT4 2+2. It wasn't just another supercar; it was a refined statement of purpose, designed for the trans-continental grand tour.
             </p>
-            <p>
+            <p className="text-gray-800">
               Its Pininfarina-styled steel body was a masterclass in clean, understated lines. Underneath the long, elegant hood sat the heart of a champion: the <span className="text-rosso font-bold">4.8-liter Colombo V12 engine</span>, producing 340 hp and propelling the luxurious cabin to speeds of 240 km/h.
             </p>
-            <div className="border-l-4 border-rosso pl-6 py-2 italic font-serif text-xl my-8">
+            <div className="border-l-4 border-rosso pl-6 py-2 italic font-serif text-xl my-8 text-black">
               "The 400 marked a turning point in Maranello: the first Ferrari ever to offer a factory automatic transmission."
             </div>
-            <p>
+            <p className="text-gray-800">
               This bold move catered to the growing luxury market, particularly in the United States, providing effortless power without sacrificing the soul of a Ferrari.
             </p>
           </div>
