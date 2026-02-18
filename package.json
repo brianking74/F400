@@ -1,26 +1,15 @@
 {
-  "name": "ferrari-400---the-grand-tourer-homage",
+  "name": "ferrari-400-homage",
+  "version": "1.0.0",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
   "dependencies": {
-    "react": "18.2.0",
-    "react-dom": "18.2.0",
-    "lucide-react": "0.344.0",
-    "@google/genai": "1.39.0",
-    "@supabase/supabase-js": "2.39.7",
-    "@react-three/fiber": "^9.5.0",
-    "@react-three/drei": "^10.7.7"
-  },
-  "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@react-three/fiber": "^9.0.0",
+    "@react-three/drei": "^10.0.0",
+    "three": "^0.173.0",
+    "lucide-react": "^0.475.0",
+    "@google/genai": "^1.39.0",
+    "@supabase/supabase-js": "^2.39.7"
   }
 }
