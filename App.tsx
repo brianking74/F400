@@ -10,18 +10,13 @@ import Gallery from './components/Gallery';
 import Footer from './components/Footer';
 import VersionDetail from './components/VersionDetail';
 import { VERSIONS, GALLERY_PROMPTS, OWNERS, HERO_PROMPT, HISTORY_PROMPT } from './constants';
-import { ShieldCheck, Loader2 } from 'lucide-react';
+import { ShieldCheck, Loader2, Database, RefreshCw } from 'lucide-react';
 
-// Safe Initialization Helpers
 const getSupabase = () => {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_ANON_KEY;
   if (!url || !key) return null;
-  try {
-    return createClient(url, key);
-  } catch (e) {
-    return null;
-  }
+  try { return createClient(url, key); } catch (e) { return null; }
 };
 
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
@@ -33,9 +28,7 @@ const initDB = (): Promise<IDBDatabase> => {
     const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
+      if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -76,109 +69,51 @@ const App: React.FC = () => {
   const [isRestoring, setIsRestoring] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentView, setCurrentView] = useState<'home' | string>('home');
+  const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [syncing, setSyncing] = useState(false);
 
   const supabase = useMemo(() => getSupabase(), []);
 
   const persistAsset = useCallback(async (key: string, data: any) => {
     await saveLocalAsset(key, data);
     if (supabase) {
-      try {
-        await supabase.from('assets').upsert({ id: key, data: data });
-      } catch (err) { console.warn(`Supabase sync failed for ${key}`, err); }
+      const { error } = await supabase.from('assets').upsert({ id: key, data: data });
+      if (error) console.error(`Sync error for ${key}:`, error.message);
     }
   }, [supabase]);
 
-  // Always instantiate GoogleGenAI right before the API call to ensure the latest key/state is used
   const generateAIImage = useCallback(async (prompt: string): Promise<string> => {
     const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      console.warn("API Key is missing from the environment.");
-      return '';
-    }
-    
+    if (!apiKey) return '';
     try {
-      // Create a fresh instance for the call
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [{ text: prompt }] },
       });
-      
       const parts = response.candidates?.[0]?.content?.parts || [];
-      for (const part of parts) {
-        if (part.inlineData) {
-          return `data:image/png;base64,${part.inlineData.data}`;
-        }
-      }
+      for (const part of parts) if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
       return '';
-    } catch (err) {
-      console.error("AI Generation Failed:", err);
-      return '';
-    }
+    } catch (err) { return ''; }
   }, []);
 
-  const autoFillMissingAssets = useCallback(async (
-    h: string, 
-    hist: string, 
-    vers: Record<string, string>, 
-    own: Record<string, string>, 
-    gal: any[]
-  ) => {
+  const forceSyncToCloud = async () => {
+    if (!supabase || !isAdmin) return;
+    setSyncing(true);
+    const keys = ['heroImage', 'historyImage', 'versionImages', 'ownerImages', 'galleryImages'];
+    for (const key of keys) {
+      const local = await getLocalAsset(key);
+      if (local) await supabase.from('assets').upsert({ id: key, data: local });
+    }
+    setSyncing(false);
+    alert("Global archive synchronized.");
+  };
+
+  const autoFillMissingAssets = useCallback(async (h: string, hist: string, vers: any, own: any, gal: any) => {
     if (!process.env.API_KEY) return;
     setIsRestoring(true);
-    
-    // Fill Hero
-    if (!h) {
-      const img = await generateAIImage(HERO_PROMPT);
-      if (img) { h = img; setHeroImage(img); await persistAsset('heroImage', img); }
-    }
-
-    // Fill History
-    if (!hist) {
-      const img = await generateAIImage(HISTORY_PROMPT);
-      if (img) { hist = img; setHistoryImage(img); await persistAsset('historyImage', img); }
-    }
-
-    // Fill Versions
-    const newVers = { ...vers };
-    for (const v of VERSIONS) {
-      if (!newVers[v.id]) {
-        const img = await generateAIImage(v.prompt);
-        if (img) { 
-          newVers[v.id] = img; 
-          setVersionImages(prev => ({ ...prev, [v.id]: img })); 
-          await persistAsset('versionImages', newVers); 
-        }
-      }
-    }
-
-    // Fill Owners
-    const newOwners = { ...own };
-    for (const o of OWNERS) {
-      if (!newOwners[o.id]) {
-        const img = await generateAIImage(o.prompt);
-        if (img) { 
-          newOwners[o.id] = img; 
-          setOwnerImages(prev => ({ ...prev, [o.id]: img })); 
-          await persistAsset('ownerImages', newOwners); 
-        }
-      }
-    }
-
-    // Fill Gallery
-    const newGal = [...gal];
-    for (const p of GALLERY_PROMPTS) {
-      if (!newGal.find(g => g.id === p.id)) {
-        const img = await generateAIImage(p.prompt);
-        if (img) {
-          const item = { ...p, url: img };
-          newGal.push(item);
-          setGalleryImages([...newGal]);
-          await persistAsset('galleryImages', newGal);
-        }
-      }
-    }
-    
+    if (!h) { const img = await generateAIImage(HERO_PROMPT); if (img) { h = img; setHeroImage(img); await persistAsset('heroImage', img); } }
+    if (!hist) { const img = await generateAIImage(HISTORY_PROMPT); if (img) { hist = img; setHistoryImage(img); await persistAsset('historyImage', img); } }
     setIsRestoring(false);
   }, [generateAIImage, persistAsset]);
 
@@ -192,116 +127,93 @@ const App: React.FC = () => {
       setIsAdmin(sessionStorage.getItem(ADMIN_KEY) === 'true');
     }
 
-    const bootstrapArchive = async () => {
-      try {
-        let assetsMap: Record<string, any> = {};
-        if (supabase) {
-          try {
-            const { data: remoteAssets } = await supabase.from('assets').select('*');
-            if (remoteAssets) remoteAssets.forEach((row: any) => { assetsMap[row.id] = row.data; });
-          } catch (e) { console.warn("Supabase unreachable", e); }
+    const bootstrap = async () => {
+      let remoteMap: Record<string, any> = {};
+      if (supabase) {
+        const { data, error } = await supabase.from('assets').select('*');
+        if (!error && data) {
+          setDbStatus('online');
+          data.forEach(row => remoteMap[row.id] = row.data);
+        } else {
+          setDbStatus('offline');
         }
-
-        const getMergedAsset = async (key: string) => {
-          if (assetsMap[key]) { await saveLocalAsset(key, assetsMap[key]); return assetsMap[key]; }
-          return await getLocalAsset(key);
-        };
-
-        const [h, hist, vers, own, gal] = await Promise.all([
-          getMergedAsset('heroImage'),
-          getMergedAsset('historyImage'),
-          getMergedAsset('versionImages'),
-          getMergedAsset('ownerImages'),
-          getMergedAsset('galleryImages')
-        ]);
-
-        if (h) setHeroImage(h);
-        if (hist) setHistoryImage(hist);
-        const finalVers = vers || {};
-        const finalOwn = own || {};
-        const finalGal = gal || [];
-        setVersionImages(finalVers);
-        setOwnerImages(finalOwn);
-        setGalleryImages(finalGal);
-
-        setIsInitializing(false);
-        
-        // If not initialized yet, start auto-fill
-        if (!h || !hist || Object.keys(finalVers).length < VERSIONS.length || finalGal.length < GALLERY_PROMPTS.length) {
-          autoFillMissingAssets(h, hist, finalVers, finalOwn, finalGal);
-        }
-      } catch (err) {
-        console.error("Bootstrap error:", err);
-        setIsInitializing(false);
       }
+
+      const load = async (key: string) => {
+        if (remoteMap[key]) { await saveLocalAsset(key, remoteMap[key]); return remoteMap[key]; }
+        return await getLocalAsset(key);
+      };
+
+      const [h, hist, vers, own, gal] = await Promise.all([
+        load('heroImage'), load('historyImage'), load('versionImages'), load('ownerImages'), load('galleryImages')
+      ]);
+
+      if (h) setHeroImage(h);
+      if (hist) setHistoryImage(hist);
+      setVersionImages(vers || {});
+      setOwnerImages(own || {});
+      setGalleryImages(gal || []);
+      setIsInitializing(false);
+
+      if (!h || !hist) autoFillMissingAssets(h, hist, vers, own, gal);
     };
-    bootstrapArchive();
+    bootstrap();
   }, [supabase, autoFillMissingAssets]);
 
   const handleHeroUpdate = (img: string) => { setHeroImage(img); persistAsset('heroImage', img); };
   const handleHistoryUpdate = (img: string) => { setHistoryImage(img); persistAsset('historyImage', img); };
   const handleVersionUpdate = (id: string, img: string) => { 
-    const n = { ...versionImages, [id]: img }; 
-    setVersionImages(n); 
-    persistAsset('versionImages', n); 
+    const n = { ...versionImages, [id]: img }; setVersionImages(n); persistAsset('versionImages', n); 
   };
   const handleOwnerUpdate = (id: string, img: string) => {
-    const n = { ...ownerImages, [id]: img };
-    setOwnerImages(n);
-    persistAsset('ownerImages', n);
+    const n = { ...ownerImages, [id]: img }; setOwnerImages(n); persistAsset('ownerImages', n);
   };
   const handleGalleryUpdate = (id: number, img: string) => {
-    const exists = galleryImages.some(g => g.id === id);
-    let newGal = exists 
+    const n = galleryImages.some(g => g.id === id) 
       ? galleryImages.map(g => g.id === id ? { ...g, url: img } : g)
       : [...galleryImages, { ...GALLERY_PROMPTS.find(p => p.id === id)!, url: img }];
-    setGalleryImages(newGal);
-    persistAsset('galleryImages', newGal);
+    setGalleryImages(n); persistAsset('galleryImages', n);
   };
 
-  if (isInitializing) {
-    return (
-      <div className="h-screen w-full bg-black flex items-center justify-center">
-        <div className="flex flex-col items-center">
-           <div className="w-12 h-[1px] bg-rosso animate-pulse mb-4"></div>
-           <span className="text-[10px] text-white/20 uppercase tracking-[0.4em]">Archival Handshake</span>
-        </div>
-      </div>
-    );
-  }
+  if (isInitializing) return (
+    <div className="h-screen w-full bg-black flex items-center justify-center">
+      <div className="w-12 h-[1px] bg-rosso animate-pulse"></div>
+    </div>
+  );
 
   const selectedVersion = VERSIONS.find(v => v.id === currentView);
 
   return (
-    <div className="min-h-screen selection:bg-rosso/30 selection:text-rosso outline-none relative bg-white" id="top" tabIndex={0}>
-      
+    <div className="min-h-screen bg-white">
       {isAdmin && (
-        <div className="fixed bottom-10 left-10 z-[100] bg-black border border-white px-5 py-3 flex items-center space-x-4 text-rosso shadow-[0_0_30px_rgba(255,40,0,0.1)]">
-          <ShieldCheck size={16} className="text-rosso" />
-          <span className="text-[11px] uppercase tracking-[0.2em] font-bold">LOCAL OVERRIDES ENABLED</span>
-        </div>
-      )}
-
-      {isRestoring && !isAdmin && (
-        <div className="fixed bottom-10 right-10 z-[100] bg-black/80 backdrop-blur-md border border-white/10 px-6 py-4 flex items-center space-x-4 text-white">
-          <Loader2 size={16} className="text-rosso animate-spin" />
-          <div className="flex flex-col">
-            <span className="text-[10px] uppercase tracking-[0.2em] font-bold">Restoring Visual Archive</span>
-            <span className="text-[8px] text-white/40 uppercase tracking-widest mt-1">Downloading Colombo V12 Schematics...</span>
+        <div className="fixed bottom-10 left-10 z-[100] bg-black border border-white/20 p-4 flex flex-col space-y-3 shadow-2xl">
+          <div className="flex items-center space-x-3 text-rosso">
+            <ShieldCheck size={16} />
+            <span className="text-[10px] uppercase tracking-widest font-bold">Admin Active</span>
           </div>
+          <div className="flex items-center space-x-2 text-[8px] uppercase tracking-widest text-white/40">
+            <Database size={10} className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso'} />
+            <span>Cloud: {dbStatus}</span>
+          </div>
+          <button 
+            onClick={forceSyncToCloud}
+            disabled={syncing}
+            className="flex items-center space-x-2 bg-white/5 hover:bg-rosso text-white px-3 py-2 text-[9px] uppercase tracking-widest transition-colors"
+          >
+            <RefreshCw size={10} className={syncing ? 'animate-spin' : ''} />
+            <span>{syncing ? 'Syncing...' : 'Force Cloud Sync'}</span>
+          </button>
         </div>
       )}
 
       {currentView === 'home' ? (
         <>
           <Header />
-          <main className="animate-in fade-in duration-700">
-            <Hero customImage={heroImage} onUpdateImage={handleHeroUpdate} isAdmin={isAdmin} onLogout={() => { sessionStorage.removeItem(ADMIN_KEY); setIsAdmin(false); }} />
-            <History customImage={historyImage} onUpdateImage={handleHistoryUpdate} isAdmin={isAdmin} />
-            <Versions images={versionImages} onNavigate={setCurrentView} onUpdateImage={handleVersionUpdate} isAdmin={isAdmin} />
-            <Owners images={ownerImages} onUpdateImage={handleOwnerUpdate} isAdmin={isAdmin} />
-            <Gallery images={galleryImages} onUpdateImage={handleGalleryUpdate} isAdmin={isAdmin} />
-          </main>
+          <Hero customImage={heroImage} onUpdateImage={handleHeroUpdate} isAdmin={isAdmin} />
+          <History customImage={historyImage} onUpdateImage={handleHistoryUpdate} isAdmin={isAdmin} />
+          <Versions images={versionImages} onNavigate={setCurrentView} onUpdateImage={handleVersionUpdate} isAdmin={isAdmin} />
+          <Owners images={ownerImages} onUpdateImage={handleOwnerUpdate} isAdmin={isAdmin} />
+          <Gallery images={galleryImages} onUpdateImage={handleGalleryUpdate} isAdmin={isAdmin} />
           <Footer />
         </>
       ) : selectedVersion ? (
