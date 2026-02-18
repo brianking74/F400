@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from "@google/genai";
+import { createClient } from "@supabase/supabase-js";
 import Header from './components/Header';
 import Hero from './components/Hero';
 import History from './components/History';
@@ -10,6 +11,14 @@ import Footer from './components/Footer';
 import VersionDetail from './components/VersionDetail';
 import { VERSIONS, GALLERY_PROMPTS, OWNERS, HISTORY_PROMPT, HERO_PROMPT } from './constants';
 import { Loader2, ShieldCheck } from 'lucide-react';
+
+// Supabase Initialization - Safe guard against missing keys
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+const supabase = (supabaseUrl && supabaseAnonKey) 
+  ? createClient(supabaseUrl, supabaseAnonKey) 
+  : null;
 
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
 const STORE_NAME = 'archival_assets';
@@ -29,7 +38,7 @@ const initDB = (): Promise<IDBDatabase> => {
   });
 };
 
-const getAsset = async (key: string): Promise<any> => {
+const getLocalAsset = async (key: string): Promise<any> => {
   try {
     const db = await initDB();
     return new Promise((resolve) => {
@@ -43,7 +52,7 @@ const getAsset = async (key: string): Promise<any> => {
   }
 };
 
-const saveAsset = async (key: string, value: any): Promise<void> => {
+const saveLocalAsset = async (key: string, value: any): Promise<void> => {
   try {
     const db = await initDB();
     return new Promise((resolve) => {
@@ -52,7 +61,7 @@ const saveAsset = async (key: string, value: any): Promise<void> => {
       transaction.oncomplete = () => resolve();
     });
   } catch (e) {
-    console.error("Archive: Storage error", e);
+    console.error("Archive: Local Storage error", e);
   }
 };
 
@@ -69,6 +78,21 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'home' | string>('home');
   const synthesisInFlight = useRef(false);
 
+  // Persistence Wrapper: Saves to both Supabase (Global) and IndexedDB (Local)
+  const persistAsset = async (key: string, data: any) => {
+    // 1. Save Locally
+    await saveLocalAsset(key, data);
+    
+    // 2. Save to Supabase for Global sync
+    if (supabase) {
+      try {
+        await supabase.from('assets').upsert({ id: key, data: data });
+      } catch (err) {
+        console.warn(`Supabase sync failed for ${key}. Content remains local.`, err);
+      }
+    }
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('admin') === 'true') {
@@ -81,12 +105,40 @@ const App: React.FC = () => {
 
     const bootstrapArchive = async () => {
       try {
+        setSynthesisStatus(supabase ? "Syncing with Global Vault..." : "Accessing Local Archive...");
+        
+        let assetsMap: Record<string, any> = {};
+
+        // 1. Try fetching everything from Supabase first if available
+        if (supabase) {
+          try {
+            const { data: remoteAssets } = await supabase.from('assets').select('*');
+            if (remoteAssets) {
+              remoteAssets.forEach((row: any) => {
+                assetsMap[row.id] = row.data;
+              });
+            }
+          } catch (e) {
+            console.warn("Could not connect to Supabase for global sync.", e);
+          }
+        }
+
+        // 2. Helper to get asset (Prefer Supabase, fallback to IndexedDB)
+        const getMergedAsset = async (key: string) => {
+          if (assetsMap[key]) {
+            // Update local cache if we found it on Supabase but it might be missing locally
+            await saveLocalAsset(key, assetsMap[key]);
+            return assetsMap[key];
+          }
+          return await getLocalAsset(key);
+        };
+
         const [h, hist, vers, own, gal] = await Promise.all([
-          getAsset('heroImage'),
-          getAsset('historyImage'),
-          getAsset('versionImages'),
-          getAsset('ownerImages'),
-          getAsset('galleryImages')
+          getMergedAsset('heroImage'),
+          getMergedAsset('historyImage'),
+          getMergedAsset('versionImages'),
+          getMergedAsset('ownerImages'),
+          getMergedAsset('galleryImages')
         ]);
 
         if (h) setHeroImage(h);
@@ -96,13 +148,16 @@ const App: React.FC = () => {
         if (gal) setGalleryImages(gal || []);
 
         setIsInitializing(false);
+        setSynthesisStatus(null);
 
         if (!synthesisInFlight.current) {
           synthesisInFlight.current = true;
           runArchivalSynthesis();
         }
       } catch (err) {
+        console.error("Bootstrap error:", err);
         setIsInitializing(false);
+        setSynthesisStatus(null);
       }
     };
     bootstrapArchive();
@@ -148,7 +203,7 @@ const App: React.FC = () => {
         const hImg = await generateImage(HERO_PROMPT, 'Hero');
         if (hImg) { 
           setHeroImage(hImg); 
-          await saveAsset('heroImage', hImg); 
+          await persistAsset('heroImage', hImg); 
         }
       }
 
@@ -156,45 +211,51 @@ const App: React.FC = () => {
         const histImg = await generateImage(HISTORY_PROMPT, 'History');
         if (histImg) { 
           setHistoryImage(histImg); 
-          await saveAsset('historyImage', histImg); 
+          await persistAsset('historyImage', histImg); 
         }
       }
 
       const currentVers = { ...versionImages };
+      let vChanged = false;
       for (const v of VERSIONS) {
         if (!currentVers[v.id]) {
           const data = await generateImage(v.prompt, `Model ${v.name}`);
           if (data) { 
             currentVers[v.id] = data; 
             setVersionImages({ ...currentVers }); 
-            await saveAsset('versionImages', currentVers); 
+            vChanged = true;
           }
         }
       }
+      if (vChanged) await persistAsset('versionImages', currentVers);
 
       const currentOwners = { ...ownerImages };
+      let oChanged = false;
       for (const o of OWNERS) {
         if (!currentOwners[o.id]) {
           const data = await generateImage(o.prompt, `Owner ${o.name}`);
           if (data) { 
             currentOwners[o.id] = data; 
             setOwnerImages({ ...currentOwners }); 
-            await saveAsset('ownerImages', currentOwners);
+            oChanged = true;
           }
         }
       }
+      if (oChanged) await persistAsset('ownerImages', currentOwners);
 
       const currentGal = [...galleryImages];
+      let gChanged = false;
       for (const gp of GALLERY_PROMPTS) {
         if (!currentGal.find(g => g.id === gp.id)) {
           const url = await generateImage(gp.prompt, `Gallery ${gp.id}`);
           if (url) { 
             currentGal.push({ ...gp, url }); 
             setGalleryImages([...currentGal]); 
-            await saveAsset('galleryImages', currentGal);
+            gChanged = true;
           }
         }
       }
+      if (gChanged) await persistAsset('galleryImages', currentGal);
 
       setSynthesisStatus(null);
     } catch (err) {
@@ -208,24 +269,24 @@ const App: React.FC = () => {
 
   const handleHeroUpdate = async (base64: string) => {
     setHeroImage(base64);
-    await saveAsset('heroImage', base64);
+    await persistAsset('heroImage', base64);
   };
 
   const handleHistoryUpdate = async (base64: string) => {
     setHistoryImage(base64);
-    await saveAsset('historyImage', base64);
+    await persistAsset('historyImage', base64);
   };
 
   const handleVersionUpdate = async (id: string, base64: string) => {
     const newVers = { ...versionImages, [id]: base64 };
     setVersionImages(newVers);
-    await saveAsset('versionImages', newVers);
+    await persistAsset('versionImages', newVers);
   };
 
   const handleOwnerUpdate = async (id: string, base64: string) => {
     const newOwners = { ...ownerImages, [id]: base64 };
     setOwnerImages(newOwners);
-    await saveAsset('ownerImages', newOwners);
+    await persistAsset('ownerImages', newOwners);
   };
 
   const handleGalleryUpdate = async (id: number, base64: string) => {
@@ -238,7 +299,7 @@ const App: React.FC = () => {
       newGal = [...galleryImages, { ...promptInfo!, url: base64 }];
     }
     setGalleryImages(newGal);
-    await saveAsset('galleryImages', newGal);
+    await persistAsset('galleryImages', newGal);
   };
 
   const handleLogout = () => {
@@ -254,7 +315,7 @@ const App: React.FC = () => {
       else sessionStorage.removeItem(ADMIN_KEY);
     }
     if (e.ctrlKey && e.shiftKey && e.key === 'R') {
-      if(window.confirm("Purge Local Vault and Re-Synthesize?")) {
+      if(window.confirm("Purge Local Vault and Re-Sync with Global?")) {
         indexedDB.deleteDatabase(DB_NAME);
         window.location.reload();
       }
@@ -266,7 +327,7 @@ const App: React.FC = () => {
       <div className="h-screen w-full bg-black flex items-center justify-center">
         <div className="flex flex-col items-center">
            <div className="w-12 h-[1px] bg-rosso animate-pulse mb-4"></div>
-           <span className="text-[10px] text-white/20 uppercase tracking-[0.4em]">Initializing Archive</span>
+           <span className="text-[10px] text-white/20 uppercase tracking-[0.4em]">Establishing Sync</span>
         </div>
       </div>
     );
