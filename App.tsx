@@ -12,17 +12,16 @@ import VersionDetail from './components/VersionDetail';
 import { VERSIONS, GALLERY_PROMPTS, OWNERS, HERO_PROMPT, HISTORY_PROMPT } from './constants';
 import { ShieldCheck, Loader2, Database, RefreshCw, AlertTriangle, CloudOff } from 'lucide-react';
 
+// Fixed: Access process.env directly as shimmed by Vite to avoid TypeScript errors and comply with security rules.
 const getSupabase = () => {
-  // Support both standard and VITE_ prefixed env vars
-  const url = process.env.SUPABASE_URL || (window as any).import?.meta?.env?.VITE_SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY || (window as any).import?.meta?.env?.VITE_SUPABASE_ANON_KEY;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY;
   
   if (!url || !key) {
-    console.warn("Supabase credentials missing. Remote sync is disabled.");
     return null;
   }
   try { return createClient(url, key); } catch (e) { 
-    console.error("Supabase init error:", e);
+    console.error("Supabase client failed to initialize:", e);
     return null; 
   }
 };
@@ -63,7 +62,7 @@ const saveLocalAsset = async (key: string, value: any): Promise<void> => {
       transaction.objectStore(STORE_NAME).put(value, key);
       transaction.oncomplete = () => resolve();
     });
-  } catch (e) { console.error("IndexedDB Error:", e); }
+  } catch (e) { console.error("Archive Error:", e); }
 };
 
 const App: React.FC = () => {
@@ -90,11 +89,11 @@ const App: React.FC = () => {
     }
   }, [supabase]);
 
+  // Fixed: Use process.env.API_KEY exclusively and correctly initialize GoogleGenAI.
   const generateAIImage = useCallback(async (prompt: string): Promise<string> => {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) return '';
+    if (!process.env.API_KEY) return '';
     try {
-      const ai = new GoogleGenAI({ apiKey });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [{ text: prompt }] },
@@ -107,31 +106,32 @@ const App: React.FC = () => {
 
   const forceSyncToCloud = async () => {
     if (!supabase) {
-      alert("Supabase client not initialized. Check your environment variables.");
+      alert("System Error: Supabase connection could not be established. Ensure your Project URL and API Key are set in the environment variables.");
       return;
     }
     setSyncing(true);
     try {
       const keys = ['heroImage', 'historyImage', 'versionImages', 'ownerImages', 'galleryImages'];
-      let count = 0;
+      let uploadedCount = 0;
       for (const key of keys) {
-        const local = await getLocalAsset(key);
-        if (local) {
-          const { error } = await supabase.from('assets').upsert({ id: key, data: local });
+        const localData = await getLocalAsset(key);
+        if (localData) {
+          const { error } = await supabase.from('assets').upsert({ id: key, data: localData });
           if (error) throw error;
-          count++;
+          uploadedCount++;
         }
       }
       setDbStatus('online');
-      alert(`Successfully pushed ${count} assets to the global cloud archive.`);
+      alert(`Success: ${uploadedCount} assets synchronized with the cloud archive.`);
     } catch (err: any) {
-      console.error("Manual sync failed:", err);
-      alert("Manual sync failed: " + err.message);
+      console.error("Sync Protocol Failure:", err);
+      alert("Synchronization Failed: " + (err.message || "Unknown error"));
     } finally {
       setSyncing(false);
     }
   };
 
+  // Fixed: Removed reference to import.meta.env.
   const autoFillMissingAssets = useCallback(async (h: string, hist: string, vers: any, own: any, gal: any) => {
     if (!process.env.API_KEY) return;
     setIsRestoring(true);
@@ -159,7 +159,6 @@ const App: React.FC = () => {
             setDbStatus('online');
             data.forEach(row => remoteMap[row.id] = row.data);
           } else {
-            console.warn("Supabase unreachable. Working in local-only mode.");
             setDbStatus('offline');
           }
         } catch (e) {
@@ -169,14 +168,17 @@ const App: React.FC = () => {
         setDbStatus('offline');
       }
 
-      const load = async (key: string) => {
-        if (remoteMap[key]) { await saveLocalAsset(key, remoteMap[key]); return remoteMap[key]; }
+      const loadAsset = async (key: string) => {
+        if (remoteMap[key]) { 
+          await saveLocalAsset(key, remoteMap[key]); 
+          return remoteMap[key]; 
+        }
         return await getLocalAsset(key);
       };
 
       try {
         const [h, hist, vers, own, gal] = await Promise.all([
-          load('heroImage'), load('historyImage'), load('versionImages'), load('ownerImages'), load('galleryImages')
+          loadAsset('heroImage'), loadAsset('historyImage'), loadAsset('versionImages'), loadAsset('ownerImages'), loadAsset('galleryImages')
         ]);
 
         if (h) setHeroImage(h);
@@ -186,7 +188,6 @@ const App: React.FC = () => {
         setGalleryImages(gal || []);
 
         setIsInitializing(false);
-
         if (!h || !hist) autoFillMissingAssets(h, hist, vers, own, gal);
       } catch (e) {
         setIsInitializing(false);
@@ -213,7 +214,7 @@ const App: React.FC = () => {
   if (isInitializing) return (
     <div className="h-screen w-full bg-black flex flex-col items-center justify-center space-y-6">
       <div className="w-16 h-[1px] bg-rosso animate-pulse"></div>
-      <span className="text-[10px] text-white/20 uppercase tracking-[0.5em]">Establishing Connection</span>
+      <span className="text-[10px] text-white/20 uppercase tracking-[0.5em] animate-pulse">Syncing Archive</span>
     </div>
   );
 
@@ -230,27 +231,19 @@ const App: React.FC = () => {
           
           <div className="flex flex-col space-y-3">
             <div className="flex items-center space-x-2 text-[9px] uppercase tracking-widest">
-              <Database size={12} className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso'} />
-              <span className="text-white/40">Remote Repository:</span>
-              <span className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso'}>{dbStatus}</span>
+              <Database size={12} className={supabase ? (dbStatus === 'online' ? 'text-green-500' : 'text-orange-400') : 'text-rosso'} />
+              <span className="text-white/40">Archive Status:</span>
+              <span className={supabase ? (dbStatus === 'online' ? 'text-green-500' : 'text-orange-400') : 'text-rosso'}>
+                {supabase ? (dbStatus === 'online' ? 'CONNECTED' : 'LOCAL-ONLY') : 'NO CREDENTIALS'}
+              </span>
             </div>
             
             {!supabase && (
               <div className="flex items-start space-x-2 text-[8px] text-rosso/70 bg-rosso/5 p-3 border border-rosso/20">
                 <AlertTriangle size={12} className="shrink-0" />
                 <div className="flex flex-col">
-                  <span className="font-bold">Keys Missing</span>
-                  <span className="mt-1 leading-tight">Check Netlify: SUPABASE_URL & SUPABASE_ANON_KEY must be set.</span>
-                </div>
-              </div>
-            )}
-            
-            {dbStatus === 'offline' && supabase && (
-              <div className="flex items-start space-x-2 text-[8px] text-orange-400 bg-orange-400/5 p-3 border border-orange-400/20">
-                <CloudOff size={12} className="shrink-0" />
-                <div className="flex flex-col">
-                  <span className="font-bold">Connection Warning</span>
-                  <span className="mt-1 leading-tight">Remote unreachable. Click "Push to Cloud" to attempt a sync.</span>
+                  <span className="font-bold uppercase tracking-widest">Action Required</span>
+                  <span className="mt-1 leading-tight">Add SUPABASE_URL and SUPABASE_ANON_KEY to your Netlify Environment Variables.</span>
                 </div>
               </div>
             )}
@@ -259,10 +252,10 @@ const App: React.FC = () => {
           <button 
             onClick={forceSyncToCloud}
             disabled={syncing || !supabase}
-            className="flex items-center justify-center space-x-2 bg-white/5 hover:bg-rosso disabled:opacity-20 disabled:hover:bg-white/5 text-white px-5 py-3 text-[10px] uppercase tracking-widest transition-all border border-white/10 group"
+            className="flex items-center justify-center space-x-3 bg-white/5 hover:bg-rosso disabled:opacity-20 disabled:hover:bg-white/5 text-white px-6 py-4 text-[10px] uppercase tracking-[0.2em] transition-all border border-white/10 group"
           >
             <RefreshCw size={12} className={`${syncing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-700'}`} />
-            <span>{syncing ? 'Syncing...' : 'Push to Cloud Archive'}</span>
+            <span className="font-bold">{syncing ? 'SYNCHRONIZING...' : 'PUSH TO CLOUD VAULT'}</span>
           </button>
         </div>
       )}
