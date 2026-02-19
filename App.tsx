@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { GoogleGenAI } from "@google/genai";
@@ -10,7 +11,7 @@ import Gallery from './components/Gallery';
 import Footer from './components/Footer';
 import VersionDetail from './components/VersionDetail';
 import { VERSIONS, GALLERY_PROMPTS, OWNERS, HERO_PROMPT, HISTORY_PROMPT } from './constants';
-import { ShieldCheck, Database, RefreshCw, AlertTriangle, Key, Link as LinkIcon } from 'lucide-react';
+import { ShieldCheck, Database, RefreshCw, AlertTriangle, Key, Link as LinkIcon, Info } from 'lucide-react';
 
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
 const STORE_NAME = 'archival_assets';
@@ -61,7 +62,7 @@ const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentView, setCurrentView] = useState<'home' | string>('home');
-  const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline' | 'no_creds'>('checking');
+  const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline' | 'no_creds' | 'permission_denied'>('checking');
   const [syncing, setSyncing] = useState(false);
 
   // Manual Credential Overrides for Admin UI
@@ -69,8 +70,10 @@ const App: React.FC = () => {
   const [manualKey, setManualKey] = useState('');
 
   const supabase = useMemo(() => {
+    // Use process.env directly as Vite define handles replacement. Removed import.meta.env to fix TS error.
     const url = manualUrl || process.env.SUPABASE_URL;
     const key = manualKey || process.env.SUPABASE_ANON_KEY;
+    
     if (!url || !key) return null;
     try {
       return createClient(url, key);
@@ -89,14 +92,17 @@ const App: React.FC = () => {
   }, [supabase]);
 
   const generateAIImage = useCallback(async (prompt: string): Promise<string> => {
-    if (!process.env.API_KEY) return '';
+    // Obtained exclusively from process.env.API_KEY as per guidelines. Removed import.meta.env fallback.
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) return '';
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: { parts: [{ text: prompt }] },
       });
       const parts = response.candidates?.[0]?.content?.parts || [];
+      // Iterating through parts to find image data as per guidelines
       for (const part of parts) if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
       return '';
     } catch (err) { return ''; }
@@ -129,7 +135,9 @@ const App: React.FC = () => {
   };
 
   const autoFillMissingAssets = useCallback(async (h: string, hist: string) => {
-    if (!process.env.API_KEY) return;
+    // Obtained exclusively from process.env.API_KEY as per guidelines. Removed import.meta.env fallback.
+    const apiKey = process.env.API_KEY;
+    if (!apiKey) return;
     if (!h) { const img = await generateAIImage(HERO_PROMPT); if (img) { h = img; setHeroImage(img); await persistAsset('heroImage', img); } }
     if (!hist) { const img = await generateAIImage(HISTORY_PROMPT); if (img) { hist = img; setHistoryImage(img); await persistAsset('historyImage', img); } }
   }, [generateAIImage, persistAsset]);
@@ -152,6 +160,10 @@ const App: React.FC = () => {
           if (!error && data) {
             setDbStatus('online');
             data.forEach(row => remoteMap[row.id] = row.data);
+          } else if (error) {
+            console.warn("Supabase Fetch Error:", error.message);
+            // If we get an error but we have a client, it's often a policy issue
+            setDbStatus(error.code === '42501' ? 'permission_denied' : 'offline');
           } else {
             setDbStatus('offline');
           }
@@ -225,12 +237,20 @@ const App: React.FC = () => {
           
           <div className="flex flex-col space-y-4">
             <div className="flex items-center space-x-2 text-[9px] uppercase tracking-widest">
-              <Database size={12} className={supabase ? 'text-green-500' : 'text-rosso'} />
+              <Database size={12} className={supabase ? (dbStatus === 'online' ? 'text-green-500' : 'text-orange-400') : 'text-rosso'} />
               <span className="text-white/40">Archive Status:</span>
-              <span className={supabase ? 'text-green-500' : 'text-rosso'}>
-                {supabase ? 'READY' : 'NO CREDENTIALS'}
+              <span className={supabase ? (dbStatus === 'online' ? 'text-green-500' : 'text-orange-400') : 'text-rosso'}>
+                {supabase ? (dbStatus === 'online' ? 'READY / CONNECTED' : 'CONNECTED / NO DATA') : 'NO CREDENTIALS'}
               </span>
             </div>
+
+            {dbStatus === 'permission_denied' && (
+              <div className="bg-rosso/10 border border-rosso/30 p-3 text-[9px] text-rosso/90 uppercase tracking-widest leading-relaxed">
+                <AlertTriangle size={14} className="mb-2" />
+                <strong>Permission Denied:</strong> Supabase RLS Policy is likely blocking "SELECT" for "anon" users. 
+                <p className="mt-1 opacity-70">Enable "SELECT" for "anon" role in Supabase dashboard to allow public view.</p>
+              </div>
+            )}
 
             {!supabase && (
               <div className="space-y-3 bg-white/5 p-4 border border-white/10">
@@ -260,6 +280,13 @@ const App: React.FC = () => {
                     className="w-full bg-black border border-white/20 px-8 py-2 text-[10px] text-white focus:border-rosso transition-colors outline-none font-mono"
                   />
                 </div>
+              </div>
+            )}
+            
+            {supabase && dbStatus === 'online' && (
+              <div className="bg-green-500/5 border border-green-500/20 p-3 text-[9px] text-green-500/80 uppercase tracking-widest flex items-start space-x-2">
+                <Info size={14} className="shrink-0" />
+                <span>Archive is globally reachable. Other browsers will see these images automatically.</span>
               </div>
             )}
           </div>
