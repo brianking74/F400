@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { GoogleGenAI } from "@google/genai";
 import Header from './components/Header';
 import Hero from './components/Hero';
@@ -10,21 +10,7 @@ import Gallery from './components/Gallery';
 import Footer from './components/Footer';
 import VersionDetail from './components/VersionDetail';
 import { VERSIONS, GALLERY_PROMPTS, OWNERS, HERO_PROMPT, HISTORY_PROMPT } from './constants';
-import { ShieldCheck, Loader2, Database, RefreshCw, AlertTriangle, CloudOff } from 'lucide-react';
-
-// Fixed: Access process.env directly as shimmed by Vite to avoid TypeScript errors and comply with security rules.
-const getSupabase = () => {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_ANON_KEY;
-  
-  if (!url || !key) {
-    return null;
-  }
-  try { return createClient(url, key); } catch (e) { 
-    console.error("Supabase client failed to initialize:", e);
-    return null; 
-  }
-};
+import { ShieldCheck, Database, RefreshCw, AlertTriangle, Key, Link as LinkIcon } from 'lucide-react';
 
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
 const STORE_NAME = 'archival_assets';
@@ -73,13 +59,26 @@ const App: React.FC = () => {
   const [galleryImages, setGalleryImages] = useState<any[]>([]);
   
   const [isInitializing, setIsInitializing] = useState(true);
-  const [isRestoring, setIsRestoring] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentView, setCurrentView] = useState<'home' | string>('home');
-  const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline'>('checking');
+  const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline' | 'no_creds'>('checking');
   const [syncing, setSyncing] = useState(false);
 
-  const supabase = useMemo(() => getSupabase(), []);
+  // Manual Credential Overrides for Admin UI
+  const [manualUrl, setManualUrl] = useState('');
+  const [manualKey, setManualKey] = useState('');
+
+  const supabase = useMemo(() => {
+    const url = manualUrl || process.env.SUPABASE_URL;
+    const key = manualKey || process.env.SUPABASE_ANON_KEY;
+    if (!url || !key) return null;
+    try {
+      return createClient(url, key);
+    } catch (e) {
+      console.error("Supabase Init Error:", e);
+      return null;
+    }
+  }, [manualUrl, manualKey]);
 
   const persistAsset = useCallback(async (key: string, data: any) => {
     await saveLocalAsset(key, data);
@@ -89,7 +88,6 @@ const App: React.FC = () => {
     }
   }, [supabase]);
 
-  // Fixed: Use process.env.API_KEY exclusively and correctly initialize GoogleGenAI.
   const generateAIImage = useCallback(async (prompt: string): Promise<string> => {
     if (!process.env.API_KEY) return '';
     try {
@@ -106,7 +104,7 @@ const App: React.FC = () => {
 
   const forceSyncToCloud = async () => {
     if (!supabase) {
-      alert("System Error: Supabase connection could not be established. Ensure your Project URL and API Key are set in the environment variables.");
+      alert("Please provide valid Supabase credentials in the panel below.");
       return;
     }
     setSyncing(true);
@@ -122,22 +120,18 @@ const App: React.FC = () => {
         }
       }
       setDbStatus('online');
-      alert(`Success: ${uploadedCount} assets synchronized with the cloud archive.`);
+      alert(`Archive Synced: ${uploadedCount} assets pushed to global repository.`);
     } catch (err: any) {
-      console.error("Sync Protocol Failure:", err);
-      alert("Synchronization Failed: " + (err.message || "Unknown error"));
+      alert("Sync Failure: " + (err.message || "Connection refused"));
     } finally {
       setSyncing(false);
     }
   };
 
-  // Fixed: Removed reference to import.meta.env.
-  const autoFillMissingAssets = useCallback(async (h: string, hist: string, vers: any, own: any, gal: any) => {
+  const autoFillMissingAssets = useCallback(async (h: string, hist: string) => {
     if (!process.env.API_KEY) return;
-    setIsRestoring(true);
     if (!h) { const img = await generateAIImage(HERO_PROMPT); if (img) { h = img; setHeroImage(img); await persistAsset('heroImage', img); } }
     if (!hist) { const img = await generateAIImage(HISTORY_PROMPT); if (img) { hist = img; setHistoryImage(img); await persistAsset('historyImage', img); } }
-    setIsRestoring(false);
   }, [generateAIImage, persistAsset]);
 
   useEffect(() => {
@@ -165,7 +159,7 @@ const App: React.FC = () => {
           setDbStatus('offline');
         }
       } else {
-        setDbStatus('offline');
+        setDbStatus('no_creds');
       }
 
       const loadAsset = async (key: string) => {
@@ -188,7 +182,7 @@ const App: React.FC = () => {
         setGalleryImages(gal || []);
 
         setIsInitializing(false);
-        if (!h || !hist) autoFillMissingAssets(h, hist, vers, own, gal);
+        if (!h || !hist) autoFillMissingAssets(h, hist);
       } catch (e) {
         setIsInitializing(false);
       }
@@ -223,27 +217,48 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-white">
       {isAdmin && (
-        <div className="fixed bottom-10 left-10 z-[100] bg-black border border-white/20 p-5 flex flex-col space-y-4 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-left duration-500">
+        <div className="fixed bottom-10 left-10 z-[100] bg-black border border-white/20 p-6 flex flex-col space-y-4 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-left duration-500 max-w-sm w-full">
           <div className="flex items-center space-x-3 text-rosso">
             <ShieldCheck size={18} />
-            <span className="text-[11px] uppercase tracking-widest font-bold">Override Protocol: Active</span>
+            <span className="text-[11px] uppercase tracking-[0.2em] font-bold">Override Protocol: Active</span>
           </div>
           
-          <div className="flex flex-col space-y-3">
+          <div className="flex flex-col space-y-4">
             <div className="flex items-center space-x-2 text-[9px] uppercase tracking-widest">
-              <Database size={12} className={supabase ? (dbStatus === 'online' ? 'text-green-500' : 'text-orange-400') : 'text-rosso'} />
+              <Database size={12} className={supabase ? 'text-green-500' : 'text-rosso'} />
               <span className="text-white/40">Archive Status:</span>
-              <span className={supabase ? (dbStatus === 'online' ? 'text-green-500' : 'text-orange-400') : 'text-rosso'}>
-                {supabase ? (dbStatus === 'online' ? 'CONNECTED' : 'LOCAL-ONLY') : 'NO CREDENTIALS'}
+              <span className={supabase ? 'text-green-500' : 'text-rosso'}>
+                {supabase ? 'READY' : 'NO CREDENTIALS'}
               </span>
             </div>
-            
+
             {!supabase && (
-              <div className="flex items-start space-x-2 text-[8px] text-rosso/70 bg-rosso/5 p-3 border border-rosso/20">
-                <AlertTriangle size={12} className="shrink-0" />
-                <div className="flex flex-col">
-                  <span className="font-bold uppercase tracking-widest">Action Required</span>
-                  <span className="mt-1 leading-tight">Add SUPABASE_URL and SUPABASE_ANON_KEY to your Netlify Environment Variables.</span>
+              <div className="space-y-3 bg-white/5 p-4 border border-white/10">
+                <p className="text-[9px] text-white/40 uppercase tracking-widest mb-2 flex items-center">
+                  <AlertTriangle size={10} className="mr-2 text-rosso" />
+                  Manual Key Entry Required
+                </p>
+                
+                <div className="relative">
+                  <LinkIcon size={10} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" />
+                  <input 
+                    type="text" 
+                    placeholder="SUPABASE URL"
+                    value={manualUrl}
+                    onChange={(e) => setManualUrl(e.target.value)}
+                    className="w-full bg-black border border-white/20 px-8 py-2 text-[10px] text-white focus:border-rosso transition-colors outline-none font-mono"
+                  />
+                </div>
+
+                <div className="relative">
+                  <Key size={10} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" />
+                  <input 
+                    type="password" 
+                    placeholder="SUPABASE ANON KEY"
+                    value={manualKey}
+                    onChange={(e) => setManualKey(e.target.value)}
+                    className="w-full bg-black border border-white/20 px-8 py-2 text-[10px] text-white focus:border-rosso transition-colors outline-none font-mono"
+                  />
                 </div>
               </div>
             )}
@@ -252,7 +267,7 @@ const App: React.FC = () => {
           <button 
             onClick={forceSyncToCloud}
             disabled={syncing || !supabase}
-            className="flex items-center justify-center space-x-3 bg-white/5 hover:bg-rosso disabled:opacity-20 disabled:hover:bg-white/5 text-white px-6 py-4 text-[10px] uppercase tracking-[0.2em] transition-all border border-white/10 group"
+            className="flex items-center justify-center space-x-3 bg-white/5 hover:bg-rosso disabled:opacity-10 disabled:grayscale text-white px-6 py-4 text-[10px] uppercase tracking-[0.3em] transition-all border border-white/10 group"
           >
             <RefreshCw size={12} className={`${syncing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-700'}`} />
             <span className="font-bold">{syncing ? 'SYNCHRONIZING...' : 'PUSH TO CLOUD VAULT'}</span>
