@@ -10,7 +10,7 @@ import Gallery from './components/Gallery';
 import Footer from './components/Footer';
 import VersionDetail from './components/VersionDetail';
 import { VERSIONS, GALLERY_PROMPTS, OWNERS, HERO_PROMPT, HISTORY_PROMPT } from './constants';
-import { ShieldCheck, Database, RefreshCw, AlertTriangle, Info } from 'lucide-react';
+import { ShieldCheck, Database, RefreshCw, AlertTriangle, Info, Terminal } from 'lucide-react';
 
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
 const STORE_NAME = 'archival_assets';
@@ -140,7 +140,7 @@ const App: React.FC = () => {
             data.forEach(row => {
               if (row && row.id) remoteMap[row.id] = row.data;
             });
-          } else if (error && (error.code === '42501' || error.status === 401)) {
+          } else if (error && (error.code === '42501' || error.status === 401 || error.status === 403)) {
             setDbStatus('permission_denied');
           } else {
             setDbStatus('offline');
@@ -201,7 +201,13 @@ const App: React.FC = () => {
       setDbStatus('online');
       alert(`Archive Synced: ${uploadedCount} assets pushed to global repository.`);
     } catch (err: any) {
-      alert("Sync Failure: " + (err.message || "Connection refused"));
+      console.error("Sync Error Detail:", err);
+      if (err.code === '42501') {
+        setDbStatus('permission_denied');
+        alert("Policy Violation: Supabase is blocking this write. See the Admin Panel (bottom left) for the fix.");
+      } else {
+        alert("Sync Failure: " + (err.message || "Connection refused"));
+      }
     } finally {
       setSyncing(false);
     }
@@ -237,9 +243,12 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-white">
       {isAdmin && (
         <div className="fixed bottom-10 left-10 z-[100] bg-black border border-white/20 p-6 flex flex-col space-y-4 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-left duration-500 max-w-sm w-full">
-          <div className="flex items-center space-x-3 text-rosso">
-            <ShieldCheck size={18} />
-            <span className="text-[11px] uppercase tracking-[0.2em] font-bold">Override Protocol: Active</span>
+          <div className="flex items-center justify-between text-rosso">
+            <div className="flex items-center space-x-3">
+              <ShieldCheck size={18} />
+              <span className="text-[11px] uppercase tracking-[0.2em] font-bold">Admin Panel</span>
+            </div>
+            <div className="w-2 h-2 rounded-full bg-rosso animate-ping"></div>
           </div>
           
           <div className="flex flex-col space-y-4">
@@ -247,29 +256,37 @@ const App: React.FC = () => {
               <Database size={12} className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso'} />
               <span className="text-white/40">Archive Status:</span>
               <span className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso'}>
-                {dbStatus === 'online' ? 'READY / CONNECTED' : dbStatus === 'permission_denied' ? 'LOCKED (RLS)' : 'NO CREDENTIALS'}
+                {dbStatus === 'online' ? 'CONNECTED' : dbStatus === 'permission_denied' ? 'LOCKED (RLS)' : 'OFFLINE'}
               </span>
             </div>
 
             {dbStatus === 'permission_denied' && (
-              <div className="bg-rosso/10 border border-rosso/30 p-3 text-[9px] text-rosso/90 uppercase tracking-widest leading-relaxed">
-                <AlertTriangle size={14} className="mb-2 text-rosso" />
-                <strong>Read Access Denied:</strong> Supabase RLS is blocking public views.
-                <p className="mt-2 text-white/60">Fix: Add a "SELECT" policy for the "anon" role on the 'assets' table in Supabase.</p>
+              <div className="bg-rosso/10 border border-rosso/30 p-4 space-y-3">
+                <div className="flex items-center text-rosso space-x-2">
+                  <AlertTriangle size={14} />
+                  <strong className="text-[10px] uppercase tracking-widest">Action Required</strong>
+                </div>
+                <p className="text-[9px] text-white/60 uppercase tracking-widest leading-relaxed">
+                  Supabase RLS is blocking your updates. To fix, run this in your Supabase SQL Editor:
+                </p>
+                <div className="bg-black p-3 font-mono text-[8px] text-green-500/80 border border-white/10 flex items-start space-x-2">
+                  <Terminal size={12} className="shrink-0 mt-0.5" />
+                  <code>CREATE POLICY "Public" ON public.assets FOR ALL TO anon USING (true) WITH CHECK (true);</code>
+                </div>
               </div>
             )}
 
             {dbStatus === 'no_creds' && (
               <div className="bg-rosso/10 border border-rosso/30 p-3 text-[9px] text-rosso/90 uppercase tracking-widest leading-relaxed">
                 <AlertTriangle size={14} className="mb-2" />
-                <strong>Setup Required:</strong> Add Supabase keys to Netlify Environment Variables.
+                <strong>Setup Required:</strong> Add Supabase keys to Netlify environment.
               </div>
             )}
             
             {dbStatus === 'online' && (
               <div className="bg-green-500/5 border border-green-500/20 p-3 text-[9px] text-green-500/80 uppercase tracking-widest flex items-start space-x-2">
                 <Info size={14} className="shrink-0" />
-                <span>Archive is globally reachable.</span>
+                <span>Cloud sync is active. Your changes are permanent and global.</span>
               </div>
             )}
           </div>
@@ -280,7 +297,7 @@ const App: React.FC = () => {
             className="flex items-center justify-center space-x-3 bg-white/5 hover:bg-rosso disabled:opacity-10 disabled:grayscale text-white px-6 py-4 text-[10px] uppercase tracking-[0.3em] transition-all border border-white/10 group"
           >
             <RefreshCw size={12} className={`${syncing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-700'}`} />
-            <span className="font-bold">{syncing ? 'SYNCHRONIZING...' : 'PUSH TO CLOUD VAULT'}</span>
+            <span className="font-bold">{syncing ? 'SYNCHRONIZING...' : 'SYNC LOCAL TO CLOUD'}</span>
           </button>
         </div>
       )}
