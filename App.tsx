@@ -73,16 +73,15 @@ const App: React.FC = () => {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_ANON_KEY;
     
-    if (!url || url === 'undefined' || !key || key === 'undefined') {
+    if (!url || url === 'undefined' || url === '' || !key || key === 'undefined' || key === '') {
       return null;
     }
     
     try {
-      // Validate URL format to prevent runtime fetch errors
       new URL(url);
       return createClient(url, key);
     } catch (e) {
-      console.error("Invalid Supabase URL:", url);
+      console.error("Supabase Initialization Failed: Invalid URL format.", url);
       return null;
     }
   }, []);
@@ -145,7 +144,7 @@ const App: React.FC = () => {
     try {
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-image',
+        model: 'gemini-3-flash-preview',
         contents: { parts: [{ text: prompt }] },
       });
       const parts = response.candidates?.[0]?.content?.parts || [];
@@ -185,21 +184,22 @@ const App: React.FC = () => {
       
       if (supabase) {
         try {
-          // Check if table exists and connection is live
           const { data, error } = await supabase.from('assets').select('id, data').limit(50);
           if (!error && data) {
             setDbStatus('online');
             data.forEach(row => {
               if (row && row.id) remoteMap[row.id] = row.data;
             });
-          } else if (error && (error.code === '42501' || error.status === 401 || error.status === 403)) {
-            setDbStatus('permission_denied');
-          } else {
-            console.error("Supabase error:", error);
-            setDbStatus('offline');
+          } else if (error) {
+            console.error("Supabase Query Error:", error.message, error.details);
+            if (error.code === '42501' || error.status === 401 || error.status === 403) {
+              setDbStatus('permission_denied');
+            } else {
+              setDbStatus('offline');
+            }
           }
         } catch (e) {
-          console.error("Supabase Connectivity Issue:", e);
+          console.error("Supabase Connection Exception:", e);
           setDbStatus('offline');
         }
       } else {
@@ -228,7 +228,7 @@ const App: React.FC = () => {
 
         autoFillMissingAssets(h, hist, eng);
       } catch (e) {
-        console.error("Bootstrap failed:", e);
+        console.error("Bootstrap local storage failed:", e);
       }
     };
     bootstrap();
@@ -292,8 +292,8 @@ const App: React.FC = () => {
                   <strong className="text-[9px] uppercase tracking-widest">Connection Diagnostics</strong>
                 </div>
                 <ul className="text-[8px] text-white/50 uppercase tracking-widest space-y-1.5 list-disc pl-4">
-                  <li>Ensure <strong>SUPABASE_URL</strong> is a valid https address.</li>
                   <li>Check if a <strong>VPN</strong> or firewall is blocking Supabase.</li>
+                  <li>Open DevTools (F12) to see specific network error codes.</li>
                   <li>Verify the <strong>assets</strong> table exists in your DB.</li>
                 </ul>
               </div>
@@ -325,7 +325,7 @@ const App: React.FC = () => {
             
             {dbStatus === 'online' && (
               <div className="bg-green-500/5 border border-green-500/20 p-2 text-[8px] text-green-500/80 uppercase tracking-widest flex items-start space-x-2 rounded-sm">
-                <Info size={14} className="shrink-0" />
+                <div className="mt-1"><Info size={14} className="shrink-0" /></div>
                 <span>Cloud sync active. All updates are being mirrored to the global repository.</span>
               </div>
             )}
