@@ -70,13 +70,15 @@ const App: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
 
   const supabase = useMemo(() => {
-    // Aggressive sanitization: trim and remove any trailing slash
-    let url = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, "");
+    // Aggressive URL sanitization to handle any accidental trailing slashes or spaces in Netlify
+    let url = (process.env.SUPABASE_URL || '').trim();
     const key = (process.env.SUPABASE_ANON_KEY || '').trim();
     
     if (!url || url === 'undefined' || !key || key === 'undefined') {
       return null;
     }
+
+    url = url.replace(/\/+$/, "");
     
     try {
       new URL(url);
@@ -162,11 +164,11 @@ const App: React.FC = () => {
     }
     if (!hist) { 
       const img = await generateAIImage(HISTORY_PROMPT); 
-      if (img) { hist = img; setHistoryImage(img); await persistAsset('historyImage', img); } 
+      if (img) { hist = img; setHistoryImage(img); await persistAsset('historyImage', hist); } 
     }
     if (!eng) {
       const img = await generateAIImage(ENGINE_PROMPT);
-      if (img) { eng = img; setEngineImage(img); await persistAsset('engineImage', img); }
+      if (img) { eng = img; setEngineImage(img); await persistAsset('engineImage', eng); }
     }
   }, [generateAIImage, persistAsset]);
 
@@ -193,6 +195,7 @@ const App: React.FC = () => {
             });
           } else if (error) {
             console.error("Supabase Connection Error:", error.message);
+            // If table doesn't exist, it's often a 404 or specific code
             if (error.code === '42501' || error.status === 401 || error.status === 403) {
               setDbStatus('permission_denied');
             } else {
@@ -200,7 +203,7 @@ const App: React.FC = () => {
             }
           }
         } catch (e) {
-          console.error("Supabase Connection Exception:", e);
+          console.error("Supabase Fatal Connection Exception:", e);
           setDbStatus('offline');
         }
       } else {
@@ -237,7 +240,7 @@ const App: React.FC = () => {
 
   const forceSyncToCloud = async () => {
     if (!supabase) {
-      alert("Configuration Missing: Add SUPABASE_URL and SUPABASE_ANON_KEY to your Netlify Environment Variables.");
+      alert("No Credentials: Set SUPABASE_URL and SUPABASE_ANON_KEY in Netlify.");
       return;
     }
     
@@ -254,13 +257,13 @@ const App: React.FC = () => {
         }
       }
       setDbStatus('online');
-      alert(`Archive Successful: ${uploadedCount} components synchronized to the cloud repository.`);
+      alert(`Archive Successful: ${uploadedCount} assets mirrored to cloud.`);
     } catch (err: any) {
-      console.error("Sync Critical Failure:", err);
+      console.error("Sync Error:", err);
       if (err.message?.includes('fetch')) {
-        alert("NETWORK ERROR: 'Failed to fetch' - This is usually caused by a network block. \n\n1. Ensure your SUPABASE_URL in Netlify has NO trailing slash. \n2. Check if a browser extension is blocking the request. \n3. Ensure the 'assets' table exists in your database.");
+        alert("CRITICAL ERROR: 'Failed to fetch'. \n\nThis usually means your browser is blocking the request. \n1. Ensure the table 'assets' exists in your Supabase project. \n2. Check that your URL doesn't have a trailing slash in Netlify. \n3. Try disabling ad-blockers for this site.");
       } else {
-        alert(`Sync Failed: ${err.message || "Unknown Network Error"}`);
+        alert(`Sync Failed: ${err.message || "Unknown error"}`);
       }
     } finally {
       setSyncing(false);
@@ -294,15 +297,17 @@ const App: React.FC = () => {
               <div className="bg-rosso/5 border border-rosso/20 p-4 space-y-4 rounded">
                 <div className="flex items-center text-rosso space-x-2">
                   <Globe size={14} />
-                  <strong className="text-[9px] uppercase tracking-widest">Network Alert</strong>
+                  <strong className="text-[9px] uppercase tracking-widest">Setup Guide</strong>
                 </div>
                 <div className="space-y-3">
                   <p className="text-[8px] text-white/50 uppercase tracking-widest leading-relaxed">
-                    The connection to Supabase failed. Please verify your <code className="text-white">SUPABASE_URL</code> does not end in a slash <code className="text-white">/</code>.
+                    1. Ensure the <code className="text-white">assets</code> table exists in your database.
                   </p>
                   <div className="bg-black/80 p-2 font-mono text-[7px] text-green-400 border border-white/10 flex flex-col space-y-2">
-                    <code className="block">Config URL: {process.env.SUPABASE_URL}</code>
+                    <code className="block">CREATE TABLE assets (id text PRIMARY KEY, data jsonb);</code>
+                    <code className="block">ALTER TABLE assets ENABLE ROW LEVEL SECURITY;</code>
                   </div>
+                  <p className="text-[8px] text-white/40 italic">Current URL: {process.env.SUPABASE_URL}</p>
                 </div>
               </div>
             )}
@@ -326,8 +331,8 @@ const App: React.FC = () => {
             {dbStatus === 'no_creds' && (
               <div className="bg-amber-500/10 border border-amber-500/30 p-3 text-[8px] text-amber-500 uppercase tracking-widest leading-relaxed rounded-sm">
                 <AlertTriangle size={14} className="mb-2" />
-                <strong>Env Missing</strong>
-                <p className="mt-1 text-white/50">Ensure <code className="text-white">SUPABASE_URL</code> and <code className="text-white">SUPABASE_ANON_KEY</code> are set in Netlify.</p>
+                <strong>Env Variables Missing</strong>
+                <p className="mt-1 text-white/50">Add <code className="text-white">SUPABASE_URL</code> and <code className="text-white">SUPABASE_ANON_KEY</code> to Netlify.</p>
               </div>
             )}
             
