@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import { GoogleGenAI } from "@google/genai";
 import Header from './components/Header';
 import Hero from './components/Hero';
@@ -11,7 +10,7 @@ import Gallery from './components/Gallery';
 import Footer from './components/Footer';
 import VersionDetail from './components/VersionDetail';
 import { VERSIONS, GALLERY_PROMPTS, OWNERS, HERO_PROMPT, HISTORY_PROMPT } from './constants';
-import { ShieldCheck, Database, RefreshCw, AlertTriangle, Key, Link as LinkIcon, Info } from 'lucide-react';
+import { ShieldCheck, Database, RefreshCw, AlertTriangle, Info } from 'lucide-react';
 
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
 const STORE_NAME = 'archival_assets';
@@ -65,23 +64,16 @@ const App: React.FC = () => {
   const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline' | 'no_creds' | 'permission_denied'>('checking');
   const [syncing, setSyncing] = useState(false);
 
-  // Manual Credential Overrides for Admin UI
-  const [manualUrl, setManualUrl] = useState('');
-  const [manualKey, setManualKey] = useState('');
-
   const supabase = useMemo(() => {
-    // Use process.env directly as Vite define handles replacement. Removed import.meta.env to fix TS error.
-    const url = manualUrl || process.env.SUPABASE_URL;
-    const key = manualKey || process.env.SUPABASE_ANON_KEY;
-    
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_ANON_KEY;
     if (!url || !key) return null;
     try {
       return createClient(url, key);
     } catch (e) {
-      console.error("Supabase Init Error:", e);
       return null;
     }
-  }, [manualUrl, manualKey]);
+  }, []);
 
   const persistAsset = useCallback(async (key: string, data: any) => {
     await saveLocalAsset(key, data);
@@ -92,7 +84,6 @@ const App: React.FC = () => {
   }, [supabase]);
 
   const generateAIImage = useCallback(async (prompt: string): Promise<string> => {
-    // Obtained exclusively from process.env.API_KEY as per guidelines. Removed import.meta.env fallback.
     const apiKey = process.env.API_KEY;
     if (!apiKey) return '';
     try {
@@ -102,7 +93,6 @@ const App: React.FC = () => {
         contents: { parts: [{ text: prompt }] },
       });
       const parts = response.candidates?.[0]?.content?.parts || [];
-      // Iterating through parts to find image data as per guidelines
       for (const part of parts) if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
       return '';
     } catch (err) { return ''; }
@@ -110,7 +100,7 @@ const App: React.FC = () => {
 
   const forceSyncToCloud = async () => {
     if (!supabase) {
-      alert("Please provide valid Supabase credentials in the panel below.");
+      alert("Missing Credentials: Set SUPABASE_URL and SUPABASE_ANON_KEY in your deployment environment.");
       return;
     }
     setSyncing(true);
@@ -135,9 +125,7 @@ const App: React.FC = () => {
   };
 
   const autoFillMissingAssets = useCallback(async (h: string, hist: string) => {
-    // Obtained exclusively from process.env.API_KEY as per guidelines. Removed import.meta.env fallback.
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) return;
+    if (!process.env.API_KEY) return;
     if (!h) { const img = await generateAIImage(HERO_PROMPT); if (img) { h = img; setHeroImage(img); await persistAsset('heroImage', img); } }
     if (!hist) { const img = await generateAIImage(HISTORY_PROMPT); if (img) { hist = img; setHistoryImage(img); await persistAsset('historyImage', img); } }
   }, [generateAIImage, persistAsset]);
@@ -160,10 +148,8 @@ const App: React.FC = () => {
           if (!error && data) {
             setDbStatus('online');
             data.forEach(row => remoteMap[row.id] = row.data);
-          } else if (error) {
-            console.warn("Supabase Fetch Error:", error.message);
-            // If we get an error but we have a client, it's often a policy issue
-            setDbStatus(error.code === '42501' ? 'permission_denied' : 'offline');
+          } else if (error && error.code === '42501') {
+            setDbStatus('permission_denied');
           } else {
             setDbStatus('offline');
           }
@@ -237,53 +223,29 @@ const App: React.FC = () => {
           
           <div className="flex flex-col space-y-4">
             <div className="flex items-center space-x-2 text-[9px] uppercase tracking-widest">
-              <Database size={12} className={supabase ? (dbStatus === 'online' ? 'text-green-500' : 'text-orange-400') : 'text-rosso'} />
+              <Database size={12} className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso'} />
               <span className="text-white/40">Archive Status:</span>
-              <span className={supabase ? (dbStatus === 'online' ? 'text-green-500' : 'text-orange-400') : 'text-rosso'}>
-                {supabase ? (dbStatus === 'online' ? 'READY / CONNECTED' : 'CONNECTED / NO DATA') : 'NO CREDENTIALS'}
+              <span className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso'}>
+                {dbStatus === 'online' ? 'READY / CONNECTED' : dbStatus === 'permission_denied' ? 'LOCKED (RLS)' : 'NO CREDENTIALS'}
               </span>
             </div>
 
             {dbStatus === 'permission_denied' && (
               <div className="bg-rosso/10 border border-rosso/30 p-3 text-[9px] text-rosso/90 uppercase tracking-widest leading-relaxed">
-                <AlertTriangle size={14} className="mb-2" />
-                <strong>Permission Denied:</strong> Supabase RLS Policy is likely blocking "SELECT" for "anon" users. 
-                <p className="mt-1 opacity-70">Enable "SELECT" for "anon" role in Supabase dashboard to allow public view.</p>
+                <AlertTriangle size={14} className="mb-2 text-rosso" />
+                <strong>Read Access Denied:</strong> Your images are in the cloud, but Supabase Row Level Security is blocking other browsers from seeing them.
+                <p className="mt-2 text-white/60">Fix: In Supabase Dashboard, go to Authentication > Policies and add a "SELECT" policy for the "anon" role on the 'assets' table.</p>
               </div>
             )}
 
-            {!supabase && (
-              <div className="space-y-3 bg-white/5 p-4 border border-white/10">
-                <p className="text-[9px] text-white/40 uppercase tracking-widest mb-2 flex items-center">
-                  <AlertTriangle size={10} className="mr-2 text-rosso" />
-                  Manual Key Entry Required
-                </p>
-                
-                <div className="relative">
-                  <LinkIcon size={10} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" />
-                  <input 
-                    type="text" 
-                    placeholder="SUPABASE URL"
-                    value={manualUrl}
-                    onChange={(e) => setManualUrl(e.target.value)}
-                    className="w-full bg-black border border-white/20 px-8 py-2 text-[10px] text-white focus:border-rosso transition-colors outline-none font-mono"
-                  />
-                </div>
-
-                <div className="relative">
-                  <Key size={10} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" />
-                  <input 
-                    type="password" 
-                    placeholder="SUPABASE ANON KEY"
-                    value={manualKey}
-                    onChange={(e) => setManualKey(e.target.value)}
-                    className="w-full bg-black border border-white/20 px-8 py-2 text-[10px] text-white focus:border-rosso transition-colors outline-none font-mono"
-                  />
-                </div>
+            {dbStatus === 'no_creds' && (
+              <div className="bg-rosso/10 border border-rosso/30 p-3 text-[9px] text-rosso/90 uppercase tracking-widest leading-relaxed">
+                <AlertTriangle size={14} className="mb-2" />
+                <strong>Setup Required:</strong> Add your Supabase keys to Netlify Environment Variables for permanent storage.
               </div>
             )}
             
-            {supabase && dbStatus === 'online' && (
+            {dbStatus === 'online' && (
               <div className="bg-green-500/5 border border-green-500/20 p-3 text-[9px] text-green-500/80 uppercase tracking-widest flex items-start space-x-2">
                 <Info size={14} className="shrink-0" />
                 <span>Archive is globally reachable. Other browsers will see these images automatically.</span>
