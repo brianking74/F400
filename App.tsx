@@ -85,7 +85,10 @@ const App: React.FC = () => {
 
   const generateAIImage = useCallback(async (prompt: string): Promise<string> => {
     const apiKey = process.env.API_KEY;
-    if (!apiKey) return '';
+    if (!apiKey) {
+      console.warn("AI Generation skipped: API_KEY not found in environment.");
+      return '';
+    }
     try {
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
@@ -95,39 +98,22 @@ const App: React.FC = () => {
       const parts = response.candidates?.[0]?.content?.parts || [];
       for (const part of parts) if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
       return '';
-    } catch (err) { return ''; }
+    } catch (err) { 
+      console.error("AI Generation Error:", err);
+      return ''; 
+    }
   }, []);
-
-  const forceSyncToCloud = async () => {
-    if (!supabase) {
-      alert("Missing Credentials: Set SUPABASE_URL and SUPABASE_ANON_KEY in your deployment environment.");
-      return;
-    }
-    setSyncing(true);
-    try {
-      const keys = ['heroImage', 'historyImage', 'versionImages', 'ownerImages', 'galleryImages'];
-      let uploadedCount = 0;
-      for (const key of keys) {
-        const localData = await getLocalAsset(key);
-        if (localData) {
-          const { error } = await supabase.from('assets').upsert({ id: key, data: localData });
-          if (error) throw error;
-          uploadedCount++;
-        }
-      }
-      setDbStatus('online');
-      alert(`Archive Synced: ${uploadedCount} assets pushed to global repository.`);
-    } catch (err: any) {
-      alert("Sync Failure: " + (err.message || "Connection refused"));
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   const autoFillMissingAssets = useCallback(async (h: string, hist: string) => {
     if (!process.env.API_KEY) return;
-    if (!h) { const img = await generateAIImage(HERO_PROMPT); if (img) { h = img; setHeroImage(img); await persistAsset('heroImage', img); } }
-    if (!hist) { const img = await generateAIImage(HISTORY_PROMPT); if (img) { hist = img; setHistoryImage(img); await persistAsset('historyImage', img); } }
+    if (!h) { 
+      const img = await generateAIImage(HERO_PROMPT); 
+      if (img) { h = img; setHeroImage(img); await persistAsset('heroImage', img); } 
+    }
+    if (!hist) { 
+      const img = await generateAIImage(HISTORY_PROMPT); 
+      if (img) { hist = img; setHistoryImage(img); await persistAsset('historyImage', img); } 
+    }
   }, [generateAIImage, persistAsset]);
 
   useEffect(() => {
@@ -182,11 +168,38 @@ const App: React.FC = () => {
         setIsInitializing(false);
         if (!h || !hist) autoFillMissingAssets(h, hist);
       } catch (e) {
+        console.error("Bootstrap error:", e);
         setIsInitializing(false);
       }
     };
     bootstrap();
   }, [supabase, autoFillMissingAssets]);
+
+  const forceSyncToCloud = async () => {
+    if (!supabase) {
+      alert("Missing Credentials: Set SUPABASE_URL and SUPABASE_ANON_KEY in your deployment environment.");
+      return;
+    }
+    setSyncing(true);
+    try {
+      const keys = ['heroImage', 'historyImage', 'versionImages', 'ownerImages', 'galleryImages'];
+      let uploadedCount = 0;
+      for (const key of keys) {
+        const localData = await getLocalAsset(key);
+        if (localData) {
+          const { error } = await supabase.from('assets').upsert({ id: key, data: localData });
+          if (error) throw error;
+          uploadedCount++;
+        }
+      }
+      setDbStatus('online');
+      alert(`Archive Synced: ${uploadedCount} assets pushed to global repository.`);
+    } catch (err: any) {
+      alert("Sync Failure: " + (err.message || "Connection refused"));
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const handleHeroUpdate = (img: string) => { setHeroImage(img); persistAsset('heroImage', img); };
   const handleHistoryUpdate = (img: string) => { setHistoryImage(img); persistAsset('historyImage', img); };
@@ -197,9 +210,12 @@ const App: React.FC = () => {
     const n = { ...ownerImages, [id]: img }; setOwnerImages(n); persistAsset('ownerImages', n);
   };
   const handleGalleryUpdate = (id: number, img: string) => {
+    const promptRef = GALLERY_PROMPTS.find(p => p.id === id);
+    if (!promptRef) return;
+    
     const n = galleryImages.some(g => g.id === id) 
       ? galleryImages.map(g => g.id === id ? { ...g, url: img } : g)
-      : [...galleryImages, { ...GALLERY_PROMPTS.find(p => p.id === id)!, url: img }];
+      : [...galleryImages, { ...promptRef, url: img }];
     setGalleryImages(n); persistAsset('galleryImages', n);
   };
 
