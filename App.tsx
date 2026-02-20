@@ -70,18 +70,21 @@ const App: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
 
   const supabase = useMemo(() => {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_ANON_KEY;
+    // Sanitize URL: Remove any trailing slashes that break the fetch path
+    let url = process.env.SUPABASE_URL || '';
+    const key = process.env.SUPABASE_ANON_KEY || '';
     
-    if (!url || url === 'undefined' || url === '' || !key || key === 'undefined' || key === '') {
+    if (!url || url === 'undefined' || !key || key === 'undefined') {
       return null;
     }
+
+    url = url.trim().replace(/\/$/, "");
     
     try {
       new URL(url);
       return createClient(url, key);
     } catch (e) {
-      console.error("Supabase Initialization Failed: Invalid URL format.", url);
+      console.error("Supabase Init Failed: Invalid URL format ->", url);
       return null;
     }
   }, []);
@@ -191,9 +194,11 @@ const App: React.FC = () => {
               if (row && row.id) remoteMap[row.id] = row.data;
             });
           } else if (error) {
-            console.error("Supabase Query Error:", error.message, error.details);
+            console.error("Supabase Connectivity Error:", error.message);
             if (error.code === '42501' || error.status === 401 || error.status === 403) {
               setDbStatus('permission_denied');
+            } else if (error.message.includes('Failed to fetch')) {
+              setDbStatus('offline');
             } else {
               setDbStatus('offline');
             }
@@ -236,7 +241,7 @@ const App: React.FC = () => {
 
   const forceSyncToCloud = async () => {
     if (!supabase) {
-      alert("No Credentials: Set SUPABASE_URL and SUPABASE_ANON_KEY in your Netlify Environment Settings.");
+      alert("No Credentials: Set SUPABASE_URL and SUPABASE_ANON_KEY in Netlify.");
       return;
     }
     
@@ -248,15 +253,22 @@ const App: React.FC = () => {
         const localData = await getLocalAsset(key);
         if (localData) {
           const { error } = await supabase.from('assets').upsert({ id: key, data: localData }, { onConflict: 'id' });
-          if (error) throw error;
+          if (error) {
+             console.error(`Sync error on ${key}:`, error);
+             throw error;
+          }
           uploadedCount++;
         }
       }
       setDbStatus('online');
-      alert(`Archive Committed: ${uploadedCount} components uploaded to cloud vault.`);
+      alert(`Archive Committed: ${uploadedCount} assets mirrored to cloud.`);
     } catch (err: any) {
       console.error("Sync Critical Failure:", err);
-      alert(`Sync Failed: ${err.message || "Network transmission error"}`);
+      if (err.message?.includes('Failed to fetch')) {
+        alert("Sync Failed: Failed to fetch. This usually means your SUPABASE_URL has an accidental trailing slash or is blocked by a VPN.");
+      } else {
+        alert(`Sync Failed: ${err.message || "Network Error"}`);
+      }
     } finally {
       setSyncing(false);
     }
@@ -286,16 +298,20 @@ const App: React.FC = () => {
             </div>
 
             {dbStatus === 'offline' && (
-              <div className="bg-rosso/5 border border-rosso/20 p-4 space-y-3 rounded">
+              <div className="bg-rosso/5 border border-rosso/20 p-4 space-y-4 rounded">
                 <div className="flex items-center text-rosso space-x-2">
                   <Globe size={14} />
-                  <strong className="text-[9px] uppercase tracking-widest">Connection Diagnostics</strong>
+                  <strong className="text-[9px] uppercase tracking-widest">Setup Guide</strong>
                 </div>
-                <ul className="text-[8px] text-white/50 uppercase tracking-widest space-y-1.5 list-disc pl-4">
-                  <li>Check if a <strong>VPN</strong> or firewall is blocking Supabase.</li>
-                  <li>Open DevTools (F12) to see specific network error codes.</li>
-                  <li>Verify the <strong>assets</strong> table exists in your DB.</li>
-                </ul>
+                <div className="space-y-3">
+                  <p className="text-[8px] text-white/50 uppercase tracking-widest leading-relaxed">
+                    1. Create table <code className="text-white">assets</code> with columns <code className="text-white">id (text, pk)</code> and <code className="text-white">data (jsonb)</code>.
+                  </p>
+                  <div className="bg-black/80 p-2 font-mono text-[7px] text-green-400 border border-white/10 flex flex-col space-y-2">
+                    <code className="block">CREATE TABLE assets (id text PRIMARY KEY, data jsonb);</code>
+                    <code className="block">ALTER TABLE assets ENABLE ROW LEVEL SECURITY;</code>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -306,11 +322,11 @@ const App: React.FC = () => {
                   <strong className="text-[9px] uppercase tracking-widest">Policy Error</strong>
                 </div>
                 <p className="text-[8px] text-white/70 uppercase tracking-widest leading-normal">
-                  RLS is blocking writes. Run this SQL in your Supabase Editor:
+                  Paste this into your Supabase SQL Editor to enable public writes:
                 </p>
                 <div className="bg-black/80 p-2 font-mono text-[7px] text-green-400 border border-white/10 flex items-start space-x-2 overflow-x-auto">
                   <Terminal size={10} className="shrink-0 mt-0.5" />
-                  <code>CREATE POLICY "Archive_All" ON public.assets FOR ALL TO anon USING (true) WITH CHECK (true);</code>
+                  <code>CREATE POLICY "Public_Archive_Access" ON public.assets FOR ALL TO anon USING (true) WITH CHECK (true);</code>
                 </div>
               </div>
             )}
@@ -319,14 +335,14 @@ const App: React.FC = () => {
               <div className="bg-amber-500/10 border border-amber-500/30 p-3 text-[8px] text-amber-500 uppercase tracking-widest leading-relaxed rounded-sm">
                 <AlertTriangle size={14} className="mb-2" />
                 <strong>Environment Missing</strong>
-                <p className="mt-1 text-white/50">Add <strong>SUPABASE_URL</strong> and <strong>SUPABASE_ANON_KEY</strong> to your Netlify dashboard.</p>
+                <p className="mt-1 text-white/50">Ensure <strong>SUPABASE_URL</strong> and <strong>SUPABASE_ANON_KEY</strong> are set in Netlify Environment Variables.</p>
               </div>
             )}
             
             {dbStatus === 'online' && (
               <div className="bg-green-500/5 border border-green-500/20 p-2 text-[8px] text-green-500/80 uppercase tracking-widest flex items-start space-x-2 rounded-sm">
                 <div className="mt-1"><Info size={14} className="shrink-0" /></div>
-                <span>Cloud sync active. All updates are being mirrored to the global repository.</span>
+                <span>Cloud repository live. All local uploads are currently being synchronized.</span>
               </div>
             )}
           </div>
