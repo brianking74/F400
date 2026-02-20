@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from "@supabase/supabase-js";
 import { GoogleGenAI } from "@google/genai";
@@ -65,7 +64,6 @@ const App: React.FC = () => {
   const [ownerImages, setOwnerImages] = useState<Record<string, string>>({});
   const [galleryImages, setGalleryImages] = useState<any[]>([]);
   
-  const [isInitializing, setIsInitializing] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentView, setCurrentView] = useState<'home' | string>('home');
   const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline' | 'no_creds' | 'permission_denied'>('checking');
@@ -175,15 +173,14 @@ const App: React.FC = () => {
         if (h) setHeroImage(h);
         if (hist) setHistoryImage(hist);
         if (eng) setEngineImage(eng);
-        setVersionImages(vers || {});
-        setOwnerImages(own || {});
-        setGalleryImages(Array.isArray(gal) ? gal : []);
+        if (vers) setVersionImages(vers);
+        if (own) setOwnerImages(own);
+        if (gal) setGalleryImages(Array.isArray(gal) ? gal : []);
 
-        setIsInitializing(false);
-        if (!h || !hist || !eng) autoFillMissingAssets(h, hist, eng);
+        // Start generator for missing pieces in background
+        autoFillMissingAssets(h, hist, eng);
       } catch (e) {
-        console.error("Bootstrap failed:", e);
-        setIsInitializing(false);
+        console.error("Bootstrap background sync failed:", e);
       }
     };
     bootstrap();
@@ -239,13 +236,6 @@ const App: React.FC = () => {
     setGalleryImages(n); persistAsset('galleryImages', n);
   };
 
-  if (isInitializing) return (
-    <div className="h-screen w-full bg-black flex flex-col items-center justify-center space-y-6">
-      <div className="w-16 h-[1px] bg-rosso animate-pulse"></div>
-      <span className="text-[10px] text-white/20 uppercase tracking-[0.5em] animate-pulse">Syncing Archive</span>
-    </div>
-  );
-
   const selectedVersion = VERSIONS.find(v => v.id === currentView);
 
   return (
@@ -276,9 +266,9 @@ const App: React.FC = () => {
                   <strong className="text-[10px] uppercase tracking-widest">Action Required</strong>
                 </div>
                 <p className="text-[9px] text-white/60 uppercase tracking-widest leading-relaxed">
-                  Supabase RLS is blocking your updates. To fix, run this in your Supabase SQL Editor:
+                  Supabase RLS is blocking updates. To fix, run this in your Supabase SQL Editor:
                 </p>
-                <div className="bg-black p-3 font-mono text-[8px] text-green-500/80 border border-white/10 flex items-start space-x-2">
+                <div className="bg-black p-3 font-mono text-[8px] text-green-500/80 border border-white/10 flex items-start space-x-2 overflow-x-auto">
                   <Terminal size={12} className="shrink-0 mt-0.5" />
                   <code>CREATE POLICY "Public" ON public.assets FOR ALL TO anon USING (true) WITH CHECK (true);</code>
                 </div>
