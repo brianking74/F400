@@ -234,7 +234,7 @@ const App: React.FC = () => {
               <div className="bg-rosso/10 border border-rosso/30 p-3 text-[9px] text-rosso/90 uppercase tracking-widest leading-relaxed">
                 <AlertTriangle size={14} className="mb-2 text-rosso" />
                 <strong>Read Access Denied:</strong> Your images are in the cloud, but Supabase Row Level Security is blocking other browsers from seeing them.
-                <p className="mt-2 text-white/60">Fix: In Supabase Dashboard, go to Authentication > Policies and add a "SELECT" policy for the "anon" role on the 'assets' table.</p>
+                <p className="mt-2 text-white/60">Fix: In Supabase Dashboard, go to Authentication &gt; Policies and add a "SELECT" policy for the "anon" role on the 'assets' table.</p>
               </div>
             )}
 
