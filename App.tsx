@@ -18,13 +18,17 @@ const ADMIN_KEY = 'f400_admin_active_session';
 
 const initDB = (): Promise<IDBDatabase> => {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
+    try {
+      const request = indexedDB.open(DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME);
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    } catch (e) {
+      reject(e);
+    }
   });
 };
 
@@ -71,6 +75,7 @@ const App: React.FC = () => {
     try {
       return createClient(url, key);
     } catch (e) {
+      console.error("Supabase Client Error:", e);
       return null;
     }
   }, []);
@@ -78,17 +83,18 @@ const App: React.FC = () => {
   const persistAsset = useCallback(async (key: string, data: any) => {
     await saveLocalAsset(key, data);
     if (supabase) {
-      const { error } = await supabase.from('assets').upsert({ id: key, data: data });
-      if (error) console.error(`Sync error for ${key}:`, error.message);
+      try {
+        const { error } = await supabase.from('assets').upsert({ id: key, data: data });
+        if (error) console.error(`Sync error for ${key}:`, error.message);
+      } catch (e) {
+        console.error(`Sync exception for ${key}:`, e);
+      }
     }
   }, [supabase]);
 
   const generateAIImage = useCallback(async (prompt: string): Promise<string> => {
     const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      console.warn("AI Generation skipped: API_KEY not found in environment.");
-      return '';
-    }
+    if (!apiKey) return '';
     try {
       const ai = new GoogleGenAI({ apiKey });
       const response = await ai.models.generateContent({
@@ -98,10 +104,7 @@ const App: React.FC = () => {
       const parts = response.candidates?.[0]?.content?.parts || [];
       for (const part of parts) if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
       return '';
-    } catch (err) { 
-      console.error("AI Generation Error:", err);
-      return ''; 
-    }
+    } catch (err) { return ''; }
   }, []);
 
   const autoFillMissingAssets = useCallback(async (h: string, hist: string) => {
@@ -128,13 +131,16 @@ const App: React.FC = () => {
 
     const bootstrap = async () => {
       let remoteMap: Record<string, any> = {};
+      
       if (supabase) {
         try {
           const { data, error } = await supabase.from('assets').select('*');
           if (!error && data) {
             setDbStatus('online');
-            data.forEach(row => remoteMap[row.id] = row.data);
-          } else if (error && error.code === '42501') {
+            data.forEach(row => {
+              if (row && row.id) remoteMap[row.id] = row.data;
+            });
+          } else if (error && (error.code === '42501' || error.status === 401)) {
             setDbStatus('permission_denied');
           } else {
             setDbStatus('offline');
@@ -163,12 +169,12 @@ const App: React.FC = () => {
         if (hist) setHistoryImage(hist);
         setVersionImages(vers || {});
         setOwnerImages(own || {});
-        setGalleryImages(gal || []);
+        setGalleryImages(Array.isArray(gal) ? gal : []);
 
         setIsInitializing(false);
         if (!h || !hist) autoFillMissingAssets(h, hist);
       } catch (e) {
-        console.error("Bootstrap error:", e);
+        console.error("Bootstrap failed:", e);
         setIsInitializing(false);
       }
     };
@@ -212,7 +218,6 @@ const App: React.FC = () => {
   const handleGalleryUpdate = (id: number, img: string) => {
     const promptRef = GALLERY_PROMPTS.find(p => p.id === id);
     if (!promptRef) return;
-    
     const n = galleryImages.some(g => g.id === id) 
       ? galleryImages.map(g => g.id === id ? { ...g, url: img } : g)
       : [...galleryImages, { ...promptRef, url: img }];
@@ -249,22 +254,22 @@ const App: React.FC = () => {
             {dbStatus === 'permission_denied' && (
               <div className="bg-rosso/10 border border-rosso/30 p-3 text-[9px] text-rosso/90 uppercase tracking-widest leading-relaxed">
                 <AlertTriangle size={14} className="mb-2 text-rosso" />
-                <strong>Read Access Denied:</strong> Your images are in the cloud, but Supabase Row Level Security is blocking other browsers from seeing them.
-                <p className="mt-2 text-white/60">Fix: In Supabase Dashboard, go to Authentication &gt; Policies and add a "SELECT" policy for the "anon" role on the 'assets' table.</p>
+                <strong>Read Access Denied:</strong> Supabase RLS is blocking public views.
+                <p className="mt-2 text-white/60">Fix: Add a "SELECT" policy for the "anon" role on the 'assets' table in Supabase.</p>
               </div>
             )}
 
             {dbStatus === 'no_creds' && (
               <div className="bg-rosso/10 border border-rosso/30 p-3 text-[9px] text-rosso/90 uppercase tracking-widest leading-relaxed">
                 <AlertTriangle size={14} className="mb-2" />
-                <strong>Setup Required:</strong> Add your Supabase keys to Netlify Environment Variables for permanent storage.
+                <strong>Setup Required:</strong> Add Supabase keys to Netlify Environment Variables.
               </div>
             )}
             
             {dbStatus === 'online' && (
               <div className="bg-green-500/5 border border-green-500/20 p-3 text-[9px] text-green-500/80 uppercase tracking-widest flex items-start space-x-2">
                 <Info size={14} className="shrink-0" />
-                <span>Archive is globally reachable. Other browsers will see these images automatically.</span>
+                <span>Archive is globally reachable.</span>
               </div>
             )}
           </div>
@@ -293,7 +298,7 @@ const App: React.FC = () => {
       ) : selectedVersion ? (
         <VersionDetail 
           version={selectedVersion} 
-          imageUrl={versionImages[selectedVersion.id]} 
+          imageUrl={versionImages[selectedVersion.id] || ''} 
           onBack={() => setCurrentView('home')}
           isAdmin={isAdmin}
           onUpdateImage={(img) => handleVersionUpdate(selectedVersion.id, img)}
