@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { createClient } from "@supabase/supabase-js";
 import { GoogleGenAI } from "@google/genai";
@@ -5,11 +6,12 @@ import Header from './components/Header';
 import Hero from './components/Hero';
 import History from './components/History';
 import Versions from './components/Versions';
+import ColomboEngine from './components/ColomboEngine';
 import Owners from './components/Owners';
 import Gallery from './components/Gallery';
 import Footer from './components/Footer';
 import VersionDetail from './components/VersionDetail';
-import { VERSIONS, GALLERY_PROMPTS, OWNERS, HERO_PROMPT, HISTORY_PROMPT } from './constants';
+import { VERSIONS, GALLERY_PROMPTS, OWNERS, HERO_PROMPT, HISTORY_PROMPT, ENGINE_PROMPT } from './constants';
 import { ShieldCheck, Database, RefreshCw, AlertTriangle, Info, Terminal } from 'lucide-react';
 
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
@@ -58,6 +60,7 @@ const saveLocalAsset = async (key: string, value: any): Promise<void> => {
 const App: React.FC = () => {
   const [heroImage, setHeroImage] = useState<string>('');
   const [historyImage, setHistoryImage] = useState<string>('');
+  const [engineImage, setEngineImage] = useState<string>('');
   const [versionImages, setVersionImages] = useState<Record<string, string>>({});
   const [ownerImages, setOwnerImages] = useState<Record<string, string>>({});
   const [galleryImages, setGalleryImages] = useState<any[]>([]);
@@ -107,7 +110,7 @@ const App: React.FC = () => {
     } catch (err) { return ''; }
   }, []);
 
-  const autoFillMissingAssets = useCallback(async (h: string, hist: string) => {
+  const autoFillMissingAssets = useCallback(async (h: string, hist: string, eng: string) => {
     if (!process.env.API_KEY) return;
     if (!h) { 
       const img = await generateAIImage(HERO_PROMPT); 
@@ -116,6 +119,10 @@ const App: React.FC = () => {
     if (!hist) { 
       const img = await generateAIImage(HISTORY_PROMPT); 
       if (img) { hist = img; setHistoryImage(img); await persistAsset('historyImage', img); } 
+    }
+    if (!eng) {
+      const img = await generateAIImage(ENGINE_PROMPT);
+      if (img) { eng = img; setEngineImage(img); await persistAsset('engineImage', img); }
     }
   }, [generateAIImage, persistAsset]);
 
@@ -161,18 +168,19 @@ const App: React.FC = () => {
       };
 
       try {
-        const [h, hist, vers, own, gal] = await Promise.all([
-          loadAsset('heroImage'), loadAsset('historyImage'), loadAsset('versionImages'), loadAsset('ownerImages'), loadAsset('galleryImages')
+        const [h, hist, eng, vers, own, gal] = await Promise.all([
+          loadAsset('heroImage'), loadAsset('historyImage'), loadAsset('engineImage'), loadAsset('versionImages'), loadAsset('ownerImages'), loadAsset('galleryImages')
         ]);
 
         if (h) setHeroImage(h);
         if (hist) setHistoryImage(hist);
+        if (eng) setEngineImage(eng);
         setVersionImages(vers || {});
         setOwnerImages(own || {});
         setGalleryImages(Array.isArray(gal) ? gal : []);
 
         setIsInitializing(false);
-        if (!h || !hist) autoFillMissingAssets(h, hist);
+        if (!h || !hist || !eng) autoFillMissingAssets(h, hist, eng);
       } catch (e) {
         console.error("Bootstrap failed:", e);
         setIsInitializing(false);
@@ -188,7 +196,7 @@ const App: React.FC = () => {
     }
     setSyncing(true);
     try {
-      const keys = ['heroImage', 'historyImage', 'versionImages', 'ownerImages', 'galleryImages'];
+      const keys = ['heroImage', 'historyImage', 'engineImage', 'versionImages', 'ownerImages', 'galleryImages'];
       let uploadedCount = 0;
       for (const key of keys) {
         const localData = await getLocalAsset(key);
@@ -215,6 +223,7 @@ const App: React.FC = () => {
 
   const handleHeroUpdate = (img: string) => { setHeroImage(img); persistAsset('heroImage', img); };
   const handleHistoryUpdate = (img: string) => { setHistoryImage(img); persistAsset('historyImage', img); };
+  const handleEngineUpdate = (img: string) => { setEngineImage(img); persistAsset('engineImage', img); };
   const handleVersionUpdate = (id: string, img: string) => { 
     const n = { ...versionImages, [id]: img }; setVersionImages(n); persistAsset('versionImages', n); 
   };
@@ -308,6 +317,7 @@ const App: React.FC = () => {
           <Hero customImage={heroImage} onUpdateImage={handleHeroUpdate} isAdmin={isAdmin} />
           <History customImage={historyImage} onUpdateImage={handleHistoryUpdate} isAdmin={isAdmin} />
           <Versions images={versionImages} onNavigate={setCurrentView} onUpdateImage={handleVersionUpdate} isAdmin={isAdmin} />
+          <ColomboEngine customImage={engineImage} onUpdateImage={handleEngineUpdate} isAdmin={isAdmin} />
           <Owners images={ownerImages} onUpdateImage={handleOwnerUpdate} isAdmin={isAdmin} />
           <Gallery images={galleryImages} onUpdateImage={handleGalleryUpdate} isAdmin={isAdmin} />
           <Footer />

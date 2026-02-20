@@ -15,6 +15,8 @@ export const HERO_PROMPT = "A red Ferrari 400 driving on a winding coastal road 
 
 export const HISTORY_PROMPT = "Studio photography of a classic 1977 Ferrari 400 grand tourer, Rosso Corsa red, sharp angular three-box silhouette, Pininfarina wedge design, perfectly straight horizontal waistline, five-spoke alloy wheels, low front nose with closed pop-up headlights, clean white background, photorealistic 1970s Italian aesthetic.";
 
+export const ENGINE_PROMPT = "Macro high-resolution mechanical photography of a Ferrari Colombo V12 engine from a 400GT, featuring red crackle-finish cam covers, silver intake manifolds, six Weber carburetors, professional studio lighting, dark charcoal background, technical masterpiece aesthetic.";
+
 export const VERSIONS: (CarVersion & { prompt: string })[] = [
   {
     id: '400gt',
