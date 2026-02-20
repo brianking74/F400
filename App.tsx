@@ -11,7 +11,7 @@ import Gallery from './components/Gallery';
 import Footer from './components/Footer';
 import VersionDetail from './components/VersionDetail';
 import { VERSIONS, GALLERY_PROMPTS, OWNERS, HERO_PROMPT, HISTORY_PROMPT, ENGINE_PROMPT } from './constants';
-import { ShieldCheck, Database, RefreshCw, AlertTriangle, Info, Terminal, Link } from 'lucide-react';
+import { ShieldCheck, Database, RefreshCw, AlertTriangle, Info, Terminal, Link, Globe } from 'lucide-react';
 
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
 const STORE_NAME = 'archival_assets';
@@ -73,16 +73,16 @@ const App: React.FC = () => {
     const url = process.env.SUPABASE_URL;
     const key = process.env.SUPABASE_ANON_KEY;
     
-    // Explicitly check for valid-looking credentials
     if (!url || url === 'undefined' || !key || key === 'undefined') {
-      console.warn("Supabase credentials missing from environment.");
       return null;
     }
     
     try {
+      // Validate URL format to prevent runtime fetch errors
+      new URL(url);
       return createClient(url, key);
     } catch (e) {
-      console.error("Supabase Client Init Error:", e);
+      console.error("Invalid Supabase URL:", url);
       return null;
     }
   }, []);
@@ -91,33 +91,28 @@ const App: React.FC = () => {
     await saveLocalAsset(key, data);
     if (supabase) {
       try {
-        const { error } = await supabase.from('assets').upsert({ id: key, data: data });
-        if (error) console.error(`Background Sync Error (${key}):`, error.message);
+        await supabase.from('assets').upsert({ id: key, data: data });
       } catch (e) {
-        // Silent catch for background persistence
+        // Silent catch for background sync
       }
     }
   }, [supabase]);
 
-  // Fix: Added handleHeroUpdate to handle banner image replacements
   const handleHeroUpdate = useCallback(async (base64: string) => {
     setHeroImage(base64);
     await persistAsset('heroImage', base64);
   }, [persistAsset]);
 
-  // Fix: Added handleHistoryUpdate to handle archival plate replacements
   const handleHistoryUpdate = useCallback(async (base64: string) => {
     setHistoryImage(base64);
     await persistAsset('historyImage', base64);
   }, [persistAsset]);
 
-  // Fix: Added handleEngineUpdate to handle engine asset uploads
   const handleEngineUpdate = useCallback(async (base64: string) => {
     setEngineImage(base64);
     await persistAsset('engineImage', base64);
   }, [persistAsset]);
 
-  // Fix: Added handleVersionUpdate to handle variant image updates
   const handleVersionUpdate = useCallback(async (id: string, base64: string) => {
     setVersionImages(prev => {
       const next = { ...prev, [id]: base64 };
@@ -126,7 +121,6 @@ const App: React.FC = () => {
     });
   }, [persistAsset]);
 
-  // Fix: Added handleOwnerUpdate to handle collector profile updates
   const handleOwnerUpdate = useCallback(async (id: string, base64: string) => {
     setOwnerImages(prev => {
       const next = { ...prev, [id]: base64 };
@@ -135,7 +129,6 @@ const App: React.FC = () => {
     });
   }, [persistAsset]);
 
-  // Fix: Added handleGalleryUpdate to handle visual archive updates
   const handleGalleryUpdate = useCallback(async (id: number, base64: string) => {
     setGalleryImages(prev => {
       const next = prev.some(img => img.id === id)
@@ -192,7 +185,8 @@ const App: React.FC = () => {
       
       if (supabase) {
         try {
-          const { data, error } = await supabase.from('assets').select('*').limit(20);
+          // Check if table exists and connection is live
+          const { data, error } = await supabase.from('assets').select('id, data').limit(50);
           if (!error && data) {
             setDbStatus('online');
             data.forEach(row => {
@@ -201,6 +195,7 @@ const App: React.FC = () => {
           } else if (error && (error.code === '42501' || error.status === 401 || error.status === 403)) {
             setDbStatus('permission_denied');
           } else {
+            console.error("Supabase error:", error);
             setDbStatus('offline');
           }
         } catch (e) {
@@ -233,7 +228,7 @@ const App: React.FC = () => {
 
         autoFillMissingAssets(h, hist, eng);
       } catch (e) {
-        console.error("Local bootstrap failed:", e);
+        console.error("Bootstrap failed:", e);
       }
     };
     bootstrap();
@@ -241,7 +236,7 @@ const App: React.FC = () => {
 
   const forceSyncToCloud = async () => {
     if (!supabase) {
-      alert("Missing Credentials: SUPABASE_URL and SUPABASE_ANON_KEY are not set in your hosting environment (e.g. Netlify Settings).");
+      alert("No Credentials: Set SUPABASE_URL and SUPABASE_ANON_KEY in your Netlify Environment Settings.");
       return;
     }
     
@@ -249,7 +244,6 @@ const App: React.FC = () => {
     try {
       const keys = ['heroImage', 'historyImage', 'engineImage', 'versionImages', 'ownerImages', 'galleryImages'];
       let uploadedCount = 0;
-      
       for (const key of keys) {
         const localData = await getLocalAsset(key);
         if (localData) {
@@ -258,21 +252,11 @@ const App: React.FC = () => {
           uploadedCount++;
         }
       }
-      
       setDbStatus('online');
-      alert(`Archive Synced Successfully: ${uploadedCount} assets were updated in the cloud.`);
+      alert(`Archive Committed: ${uploadedCount} components uploaded to cloud vault.`);
     } catch (err: any) {
-      console.error("Sync Operation Failed:", err);
-      
-      if (err.message === 'Failed to fetch' || err.code === 'FETCH_ERROR') {
-        alert("Network Error: Could not reach Supabase. This is usually due to an incorrect SUPABASE_URL or a strict corporate firewall/VPN.");
-        setDbStatus('offline');
-      } else if (err.code === '42501') {
-        setDbStatus('permission_denied');
-        alert("Policy Error: Supabase blocked the write request. Please run the SQL policy provided in the Admin Panel.");
-      } else {
-        alert(`Sync Failure: ${err.message || "Unknown error occurred during transmission."}`);
-      }
+      console.error("Sync Critical Failure:", err);
+      alert(`Sync Failed: ${err.message || "Network transmission error"}`);
     } finally {
       setSyncing(false);
     }
@@ -283,7 +267,7 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-black">
       {isAdmin && (
-        <div className="fixed bottom-6 left-6 z-[100] bg-zinc-950 border border-white/10 p-6 flex flex-col space-y-4 shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-2xl animate-in fade-in slide-in-from-left duration-500 max-w-[340px] w-full">
+        <div className="fixed bottom-6 left-6 z-[100] bg-zinc-950 border border-white/10 p-6 flex flex-col space-y-4 shadow-[0_0_60px_rgba(0,0,0,1)] backdrop-blur-2xl animate-in fade-in slide-in-from-left duration-500 max-w-[340px] w-full">
           <div className="flex items-center justify-between text-rosso">
             <div className="flex items-center space-x-3">
               <ShieldCheck size={18} />
@@ -293,7 +277,7 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex flex-col space-y-3">
-            <div className="flex items-center space-x-2 text-[9px] uppercase tracking-widest bg-white/5 p-2 rounded">
+            <div className="flex items-center space-x-2 text-[9px] uppercase tracking-widest bg-white/5 p-3 rounded border border-white/5">
               <Database size={12} className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso'} />
               <span className="text-white/40">Status:</span>
               <span className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso font-bold'}>
@@ -301,18 +285,32 @@ const App: React.FC = () => {
               </span>
             </div>
 
+            {dbStatus === 'offline' && (
+              <div className="bg-rosso/5 border border-rosso/20 p-4 space-y-3 rounded">
+                <div className="flex items-center text-rosso space-x-2">
+                  <Globe size={14} />
+                  <strong className="text-[9px] uppercase tracking-widest">Connection Diagnostics</strong>
+                </div>
+                <ul className="text-[8px] text-white/50 uppercase tracking-widest space-y-1.5 list-disc pl-4">
+                  <li>Ensure <strong>SUPABASE_URL</strong> is a valid https address.</li>
+                  <li>Check if a <strong>VPN</strong> or firewall is blocking Supabase.</li>
+                  <li>Verify the <strong>assets</strong> table exists in your DB.</li>
+                </ul>
+              </div>
+            )}
+
             {dbStatus === 'permission_denied' && (
               <div className="bg-rosso/10 border border-rosso/30 p-3 space-y-3 rounded-sm">
                 <div className="flex items-center text-rosso space-x-2">
                   <AlertTriangle size={14} />
-                  <strong className="text-[9px] uppercase tracking-widest">Security Lock</strong>
+                  <strong className="text-[9px] uppercase tracking-widest">Policy Error</strong>
                 </div>
                 <p className="text-[8px] text-white/70 uppercase tracking-widest leading-normal">
-                  Supabase RLS is active. Paste this into your SQL Editor to unlock cloud sync:
+                  RLS is blocking writes. Run this SQL in your Supabase Editor:
                 </p>
                 <div className="bg-black/80 p-2 font-mono text-[7px] text-green-400 border border-white/10 flex items-start space-x-2 overflow-x-auto">
                   <Terminal size={10} className="shrink-0 mt-0.5" />
-                  <code>CREATE POLICY "FullAccess" ON public.assets FOR ALL TO anon USING (true) WITH CHECK (true);</code>
+                  <code>CREATE POLICY "Archive_All" ON public.assets FOR ALL TO anon USING (true) WITH CHECK (true);</code>
                 </div>
               </div>
             )}
@@ -320,23 +318,15 @@ const App: React.FC = () => {
             {dbStatus === 'no_creds' && (
               <div className="bg-amber-500/10 border border-amber-500/30 p-3 text-[8px] text-amber-500 uppercase tracking-widest leading-relaxed rounded-sm">
                 <AlertTriangle size={14} className="mb-2" />
-                <strong>Credentials Required</strong>
-                <p className="mt-1 text-white/50">Add SUPABASE_URL and SUPABASE_ANON_KEY to your Netlify dashboard environment variables.</p>
-              </div>
-            )}
-
-            {dbStatus === 'offline' && (
-              <div className="bg-white/5 border border-white/10 p-3 text-[8px] text-white/40 uppercase tracking-widest leading-relaxed rounded-sm">
-                <Link size={14} className="mb-2 text-rosso" />
-                <strong>Connection Tip</strong>
-                <p className="mt-1">"Failed to fetch" usually means the URL is wrong or a VPN is blocking the request to Supabase.</p>
+                <strong>Environment Missing</strong>
+                <p className="mt-1 text-white/50">Add <strong>SUPABASE_URL</strong> and <strong>SUPABASE_ANON_KEY</strong> to your Netlify dashboard.</p>
               </div>
             )}
             
             {dbStatus === 'online' && (
               <div className="bg-green-500/5 border border-green-500/20 p-2 text-[8px] text-green-500/80 uppercase tracking-widest flex items-start space-x-2 rounded-sm">
                 <Info size={14} className="shrink-0" />
-                <span>Cloud repository linked. Syncing local changes to global vault.</span>
+                <span>Cloud sync active. All updates are being mirrored to the global repository.</span>
               </div>
             )}
           </div>
