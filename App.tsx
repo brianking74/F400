@@ -70,22 +70,19 @@ const App: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
 
   const supabase = useMemo(() => {
-    // Aggressive sanitization to fix "Failed to Fetch" from trailing slashes or spaces
-    let url = (process.env.SUPABASE_URL || '').trim();
+    // Aggressive sanitization: trim and remove any trailing slash
+    let url = (process.env.SUPABASE_URL || '').trim().replace(/\/+$/, "");
     const key = (process.env.SUPABASE_ANON_KEY || '').trim();
     
     if (!url || url === 'undefined' || !key || key === 'undefined') {
       return null;
     }
-
-    // Ensure no trailing slash
-    url = url.replace(/\/$/, "");
     
     try {
       new URL(url);
       return createClient(url, key);
     } catch (e) {
-      console.error("Supabase Initialization Error: The URL provided is not valid.", url);
+      console.error("Supabase Init Failed: Invalid URL", url);
       return null;
     }
   }, []);
@@ -96,7 +93,7 @@ const App: React.FC = () => {
       try {
         await supabase.from('assets').upsert({ id: key, data: data });
       } catch (e) {
-        // Silent background fail
+        // Silent catch for background sync
       }
     }
   }, [supabase]);
@@ -195,7 +192,7 @@ const App: React.FC = () => {
               if (row && row.id) remoteMap[row.id] = row.data;
             });
           } else if (error) {
-            console.error("Supabase Connectivity Error:", error.message);
+            console.error("Supabase Connection Error:", error.message);
             if (error.code === '42501' || error.status === 401 || error.status === 403) {
               setDbStatus('permission_denied');
             } else {
@@ -240,7 +237,7 @@ const App: React.FC = () => {
 
   const forceSyncToCloud = async () => {
     if (!supabase) {
-      alert("No Credentials: Set SUPABASE_URL and SUPABASE_ANON_KEY in Netlify.");
+      alert("Configuration Missing: Add SUPABASE_URL and SUPABASE_ANON_KEY to your Netlify Environment Variables.");
       return;
     }
     
@@ -257,14 +254,13 @@ const App: React.FC = () => {
         }
       }
       setDbStatus('online');
-      alert(`Archive Committed: ${uploadedCount} assets mirrored to cloud.`);
+      alert(`Archive Successful: ${uploadedCount} components synchronized to the cloud repository.`);
     } catch (err: any) {
       console.error("Sync Critical Failure:", err);
-      // Detailed alert for VPN users
-      if (err.name === 'TypeError' || err.message?.includes('fetch')) {
-        alert("CRITICAL ERROR: Failed to Fetch. \n\nYour VPN is likely blocking the connection to Supabase. Please turn off your VPN or white-list 'supabase.co' to sync your changes.");
+      if (err.message?.includes('fetch')) {
+        alert("NETWORK ERROR: 'Failed to fetch' - This is usually caused by a network block. \n\n1. Ensure your SUPABASE_URL in Netlify has NO trailing slash. \n2. Check if a browser extension is blocking the request. \n3. Ensure the 'assets' table exists in your database.");
       } else {
-        alert(`Sync Failed: ${err.message || "Network Error"}`);
+        alert(`Sync Failed: ${err.message || "Unknown Network Error"}`);
       }
     } finally {
       setSyncing(false);
@@ -301,15 +297,11 @@ const App: React.FC = () => {
                   <strong className="text-[9px] uppercase tracking-widest">Network Alert</strong>
                 </div>
                 <div className="space-y-3">
-                  <p className="text-[8px] text-white/70 uppercase tracking-widest leading-relaxed font-bold">
-                    ⚠️ VPN DETECTED OR CONNECTION BLOCKED
-                  </p>
                   <p className="text-[8px] text-white/50 uppercase tracking-widest leading-relaxed">
-                    If using a VPN, the browser may block requests to Supabase. Try disabling it to verify the connection.
+                    The connection to Supabase failed. Please verify your <code className="text-white">SUPABASE_URL</code> does not end in a slash <code className="text-white">/</code>.
                   </p>
                   <div className="bg-black/80 p-2 font-mono text-[7px] text-green-400 border border-white/10 flex flex-col space-y-2">
-                    <code className="block">URL: {process.env.SUPABASE_URL}</code>
-                    <code className="block">Check console (F12) for error details.</code>
+                    <code className="block">Config URL: {process.env.SUPABASE_URL}</code>
                   </div>
                 </div>
               </div>
@@ -334,15 +326,15 @@ const App: React.FC = () => {
             {dbStatus === 'no_creds' && (
               <div className="bg-amber-500/10 border border-amber-500/30 p-3 text-[8px] text-amber-500 uppercase tracking-widest leading-relaxed rounded-sm">
                 <AlertTriangle size={14} className="mb-2" />
-                <strong>Environment Missing</strong>
-                <p className="mt-1 text-white/50">Ensure <strong>SUPABASE_URL</strong> and <strong>SUPABASE_ANON_KEY</strong> are set in Netlify Environment Variables.</p>
+                <strong>Env Missing</strong>
+                <p className="mt-1 text-white/50">Ensure <code className="text-white">SUPABASE_URL</code> and <code className="text-white">SUPABASE_ANON_KEY</code> are set in Netlify.</p>
               </div>
             )}
             
             {dbStatus === 'online' && (
               <div className="bg-green-500/5 border border-green-500/20 p-2 text-[8px] text-green-500/80 uppercase tracking-widest flex items-start space-x-2 rounded-sm">
                 <div className="mt-1"><Info size={14} className="shrink-0" /></div>
-                <span>Sync established. Your changes are being archived in real-time.</span>
+                <span>Sync established. Your changes are archived in real-time.</span>
               </div>
             )}
           </div>
