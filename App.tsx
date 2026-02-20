@@ -66,11 +66,10 @@ const App: React.FC = () => {
   
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentView, setCurrentView] = useState<'home' | string>('home');
-  const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline' | 'no_creds' | 'permission_denied'>('checking');
+  const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline' | 'no_creds' | 'permission_denied' | 'table_missing'>('checking');
   const [syncing, setSyncing] = useState(false);
 
   const supabase = useMemo(() => {
-    // Aggressive URL sanitization to handle any accidental trailing slashes or spaces in Netlify
     let url = (process.env.SUPABASE_URL || '').trim();
     const key = (process.env.SUPABASE_ANON_KEY || '').trim();
     
@@ -84,7 +83,7 @@ const App: React.FC = () => {
       new URL(url);
       return createClient(url, key);
     } catch (e) {
-      console.error("Supabase Init Failed: Invalid URL", url);
+      console.error("Supabase Client Init Error:", e);
       return null;
     }
   }, []);
@@ -94,9 +93,7 @@ const App: React.FC = () => {
     if (supabase) {
       try {
         await supabase.from('assets').upsert({ id: key, data: data });
-      } catch (e) {
-        // Silent catch for background sync
-      }
+      } catch (e) {}
     }
   }, [supabase]);
 
@@ -194,16 +191,17 @@ const App: React.FC = () => {
               if (row && row.id) remoteMap[row.id] = row.data;
             });
           } else if (error) {
-            console.error("Supabase Connection Error:", error.message);
-            // If table doesn't exist, it's often a 404 or specific code
-            if (error.code === '42501' || error.status === 401 || error.status === 403) {
+            console.error("Supabase diagnostic:", error);
+            if (error.code === '42P01') {
+              setDbStatus('table_missing');
+            } else if (error.code === '42501' || error.status === 401 || error.status === 403) {
               setDbStatus('permission_denied');
             } else {
               setDbStatus('offline');
             }
           }
         } catch (e) {
-          console.error("Supabase Fatal Connection Exception:", e);
+          console.error("Supabase Exception:", e);
           setDbStatus('offline');
         }
       } else {
@@ -232,7 +230,7 @@ const App: React.FC = () => {
 
         autoFillMissingAssets(h, hist, eng);
       } catch (e) {
-        console.error("Bootstrap local storage failed:", e);
+        console.error("Bootstrap error:", e);
       }
     };
     bootstrap();
@@ -257,11 +255,11 @@ const App: React.FC = () => {
         }
       }
       setDbStatus('online');
-      alert(`Archive Successful: ${uploadedCount} assets mirrored to cloud.`);
+      alert(`Archive Successful: ${uploadedCount} components synchronized to the cloud repository.`);
     } catch (err: any) {
-      console.error("Sync Error:", err);
+      console.error("Sync Failure:", err);
       if (err.message?.includes('fetch')) {
-        alert("CRITICAL ERROR: 'Failed to fetch'. \n\nThis usually means your browser is blocking the request. \n1. Ensure the table 'assets' exists in your Supabase project. \n2. Check that your URL doesn't have a trailing slash in Netlify. \n3. Try disabling ad-blockers for this site.");
+        alert("NETWORK ERROR: 'Failed to fetch'. \n\nThis is often caused by conflicting scripts in the HTML or browser security blocking the cross-origin request. Check the 'Maranello Archive Ops' panel for specific instructions.");
       } else {
         alert(`Sync Failed: ${err.message || "Unknown error"}`);
       }
@@ -289,25 +287,44 @@ const App: React.FC = () => {
               <Database size={12} className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso'} />
               <span className="text-white/40">Status:</span>
               <span className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso font-bold'}>
-                {dbStatus === 'online' ? 'CONNECTED' : dbStatus === 'permission_denied' ? 'RLS LOCKED' : dbStatus === 'no_creds' ? 'MISSING ENV' : 'UNREACHABLE'}
+                {dbStatus === 'online' ? 'CONNECTED' : dbStatus === 'permission_denied' ? 'RLS LOCKED' : dbStatus === 'table_missing' ? 'DB EMPTY' : dbStatus === 'no_creds' ? 'MISSING ENV' : 'UNREACHABLE'}
               </span>
             </div>
 
-            {dbStatus === 'offline' && (
+            {dbStatus === 'table_missing' && (
               <div className="bg-rosso/5 border border-rosso/20 p-4 space-y-4 rounded">
                 <div className="flex items-center text-rosso space-x-2">
                   <Globe size={14} />
-                  <strong className="text-[9px] uppercase tracking-widest">Setup Guide</strong>
+                  <strong className="text-[9px] uppercase tracking-widest">Initialization Required</strong>
                 </div>
                 <div className="space-y-3">
                   <p className="text-[8px] text-white/50 uppercase tracking-widest leading-relaxed">
-                    1. Ensure the <code className="text-white">assets</code> table exists in your database.
+                    The 'assets' table was not found in your Supabase project. Run this in your SQL Editor:
                   </p>
                   <div className="bg-black/80 p-2 font-mono text-[7px] text-green-400 border border-white/10 flex flex-col space-y-2">
                     <code className="block">CREATE TABLE assets (id text PRIMARY KEY, data jsonb);</code>
                     <code className="block">ALTER TABLE assets ENABLE ROW LEVEL SECURITY;</code>
                   </div>
-                  <p className="text-[8px] text-white/40 italic">Current URL: {process.env.SUPABASE_URL}</p>
+                </div>
+              </div>
+            )}
+
+            {dbStatus === 'offline' && (
+              <div className="bg-rosso/5 border border-rosso/20 p-4 space-y-4 rounded">
+                <div className="flex items-center text-rosso space-x-2">
+                  <AlertTriangle size={14} />
+                  <strong className="text-[9px] uppercase tracking-widest">Network Alert</strong>
+                </div>
+                <div className="space-y-3">
+                  <p className="text-[8px] text-white/50 uppercase tracking-widest leading-relaxed">
+                    The connection to Supabase is being blocked by your browser or network. 
+                  </p>
+                  <ul className="text-[7px] text-white/40 list-disc pl-4 space-y-1 uppercase tracking-widest">
+                    <li>Check if ad-blockers are disabled</li>
+                    <li>Verify SUPABASE_URL in Netlify has NO trailing slash</li>
+                    <li>Verify SUPABASE_ANON_KEY is correct</li>
+                  </ul>
+                  <p className="text-[8px] text-white/30 italic">Target: {process.env.SUPABASE_URL}</p>
                 </div>
               </div>
             )}
@@ -319,7 +336,7 @@ const App: React.FC = () => {
                   <strong className="text-[9px] uppercase tracking-widest">Policy Error</strong>
                 </div>
                 <p className="text-[8px] text-white/70 uppercase tracking-widest leading-normal">
-                  Paste this into your Supabase SQL Editor:
+                  Row Level Security (RLS) is active but no public policy exists.
                 </p>
                 <div className="bg-black/80 p-2 font-mono text-[7px] text-green-400 border border-white/10 flex items-start space-x-2 overflow-x-auto">
                   <Terminal size={10} className="shrink-0 mt-0.5" />
@@ -331,15 +348,15 @@ const App: React.FC = () => {
             {dbStatus === 'no_creds' && (
               <div className="bg-amber-500/10 border border-amber-500/30 p-3 text-[8px] text-amber-500 uppercase tracking-widest leading-relaxed rounded-sm">
                 <AlertTriangle size={14} className="mb-2" />
-                <strong>Env Variables Missing</strong>
-                <p className="mt-1 text-white/50">Add <code className="text-white">SUPABASE_URL</code> and <code className="text-white">SUPABASE_ANON_KEY</code> to Netlify.</p>
+                <strong>Variables Missing</strong>
+                <p className="mt-1 text-white/50">Ensure <code className="text-white">SUPABASE_URL</code> and <code className="text-white">SUPABASE_ANON_KEY</code> are saved in Netlify.</p>
               </div>
             )}
             
             {dbStatus === 'online' && (
               <div className="bg-green-500/5 border border-green-500/20 p-2 text-[8px] text-green-500/80 uppercase tracking-widest flex items-start space-x-2 rounded-sm">
                 <div className="mt-1"><Info size={14} className="shrink-0" /></div>
-                <span>Sync established. Your changes are archived in real-time.</span>
+                <span>Repository Connected. Your changes are synchronized with the cloud vault.</span>
               </div>
             )}
           </div>
