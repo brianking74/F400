@@ -70,21 +70,22 @@ const App: React.FC = () => {
   const [syncing, setSyncing] = useState(false);
 
   const supabase = useMemo(() => {
-    // Sanitize URL: Remove any trailing slashes that break the fetch path
-    let url = process.env.SUPABASE_URL || '';
-    const key = process.env.SUPABASE_ANON_KEY || '';
+    // Aggressive sanitization to fix "Failed to Fetch" from trailing slashes or spaces
+    let url = (process.env.SUPABASE_URL || '').trim();
+    const key = (process.env.SUPABASE_ANON_KEY || '').trim();
     
     if (!url || url === 'undefined' || !key || key === 'undefined') {
       return null;
     }
 
-    url = url.trim().replace(/\/$/, "");
+    // Ensure no trailing slash
+    url = url.replace(/\/$/, "");
     
     try {
       new URL(url);
       return createClient(url, key);
     } catch (e) {
-      console.error("Supabase Init Failed: Invalid URL format ->", url);
+      console.error("Supabase Initialization Error: The URL provided is not valid.", url);
       return null;
     }
   }, []);
@@ -95,7 +96,7 @@ const App: React.FC = () => {
       try {
         await supabase.from('assets').upsert({ id: key, data: data });
       } catch (e) {
-        // Silent catch for background sync
+        // Silent background fail
       }
     }
   }, [supabase]);
@@ -197,8 +198,6 @@ const App: React.FC = () => {
             console.error("Supabase Connectivity Error:", error.message);
             if (error.code === '42501' || error.status === 401 || error.status === 403) {
               setDbStatus('permission_denied');
-            } else if (error.message.includes('Failed to fetch')) {
-              setDbStatus('offline');
             } else {
               setDbStatus('offline');
             }
@@ -253,10 +252,7 @@ const App: React.FC = () => {
         const localData = await getLocalAsset(key);
         if (localData) {
           const { error } = await supabase.from('assets').upsert({ id: key, data: localData }, { onConflict: 'id' });
-          if (error) {
-             console.error(`Sync error on ${key}:`, error);
-             throw error;
-          }
+          if (error) throw error;
           uploadedCount++;
         }
       }
@@ -264,8 +260,9 @@ const App: React.FC = () => {
       alert(`Archive Committed: ${uploadedCount} assets mirrored to cloud.`);
     } catch (err: any) {
       console.error("Sync Critical Failure:", err);
-      if (err.message?.includes('Failed to fetch')) {
-        alert("Sync Failed: Failed to fetch. This usually means your SUPABASE_URL has an accidental trailing slash or is blocked by a VPN.");
+      // Detailed alert for VPN users
+      if (err.name === 'TypeError' || err.message?.includes('fetch')) {
+        alert("CRITICAL ERROR: Failed to Fetch. \n\nYour VPN is likely blocking the connection to Supabase. Please turn off your VPN or white-list 'supabase.co' to sync your changes.");
       } else {
         alert(`Sync Failed: ${err.message || "Network Error"}`);
       }
@@ -301,15 +298,18 @@ const App: React.FC = () => {
               <div className="bg-rosso/5 border border-rosso/20 p-4 space-y-4 rounded">
                 <div className="flex items-center text-rosso space-x-2">
                   <Globe size={14} />
-                  <strong className="text-[9px] uppercase tracking-widest">Setup Guide</strong>
+                  <strong className="text-[9px] uppercase tracking-widest">Network Alert</strong>
                 </div>
                 <div className="space-y-3">
+                  <p className="text-[8px] text-white/70 uppercase tracking-widest leading-relaxed font-bold">
+                    ⚠️ VPN DETECTED OR CONNECTION BLOCKED
+                  </p>
                   <p className="text-[8px] text-white/50 uppercase tracking-widest leading-relaxed">
-                    1. Create table <code className="text-white">assets</code> with columns <code className="text-white">id (text, pk)</code> and <code className="text-white">data (jsonb)</code>.
+                    If using a VPN, the browser may block requests to Supabase. Try disabling it to verify the connection.
                   </p>
                   <div className="bg-black/80 p-2 font-mono text-[7px] text-green-400 border border-white/10 flex flex-col space-y-2">
-                    <code className="block">CREATE TABLE assets (id text PRIMARY KEY, data jsonb);</code>
-                    <code className="block">ALTER TABLE assets ENABLE ROW LEVEL SECURITY;</code>
+                    <code className="block">URL: {process.env.SUPABASE_URL}</code>
+                    <code className="block">Check console (F12) for error details.</code>
                   </div>
                 </div>
               </div>
@@ -322,7 +322,7 @@ const App: React.FC = () => {
                   <strong className="text-[9px] uppercase tracking-widest">Policy Error</strong>
                 </div>
                 <p className="text-[8px] text-white/70 uppercase tracking-widest leading-normal">
-                  Paste this into your Supabase SQL Editor to enable public writes:
+                  Paste this into your Supabase SQL Editor:
                 </p>
                 <div className="bg-black/80 p-2 font-mono text-[7px] text-green-400 border border-white/10 flex items-start space-x-2 overflow-x-auto">
                   <Terminal size={10} className="shrink-0 mt-0.5" />
@@ -342,7 +342,7 @@ const App: React.FC = () => {
             {dbStatus === 'online' && (
               <div className="bg-green-500/5 border border-green-500/20 p-2 text-[8px] text-green-500/80 uppercase tracking-widest flex items-start space-x-2 rounded-sm">
                 <div className="mt-1"><Info size={14} className="shrink-0" /></div>
-                <span>Cloud repository live. All local uploads are currently being synchronized.</span>
+                <span>Sync established. Your changes are being archived in real-time.</span>
               </div>
             )}
           </div>
