@@ -1,6 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { createClient } from "@supabase/supabase-js";
-import { GoogleGenAI } from "@google/genai";
+import React, { useState, useEffect, useCallback } from 'react';
 import Header from './components/Header';
 import Hero from './components/Hero';
 import History from './components/History';
@@ -10,8 +8,9 @@ import Owners from './components/Owners';
 import Gallery from './components/Gallery';
 import Footer from './components/Footer';
 import VersionDetail from './components/VersionDetail';
-import { VERSIONS, GALLERY_PROMPTS, OWNERS, HERO_PROMPT, HISTORY_PROMPT, ENGINE_PROMPT } from './constants';
-import { ShieldCheck, Database, RefreshCw, AlertTriangle, Info, Terminal, Link, Globe } from 'lucide-react';
+import { VERSIONS, GALLERY_PROMPTS, OWNERS } from './constants';
+import { CLOUDINARY_ASSETS } from './cloudinaryAssets';
+import { ShieldCheck, Cloud, Info } from 'lucide-react';
 
 const DB_NAME = 'FERRARI_400_PERMANENT_VAULT';
 const STORE_NAME = 'archival_assets';
@@ -57,45 +56,22 @@ const saveLocalAsset = async (key: string, value: any): Promise<void> => {
 };
 
 const App: React.FC = () => {
-  const [heroImage, setHeroImage] = useState<string>('');
-  const [historyImage, setHistoryImage] = useState<string>('');
-  const [engineImage, setEngineImage] = useState<string>('');
-  const [versionImages, setVersionImages] = useState<Record<string, string>>({});
-  const [ownerImages, setOwnerImages] = useState<Record<string, string>>({});
-  const [galleryImages, setGalleryImages] = useState<any[]>([]);
-  
+  // Images are delivered from the Cloudinary CDN (see cloudinaryAssets.ts).
+  // Values below are the production defaults; admin uploads override them
+  // per-browser via IndexedDB.
+  const [heroImage, setHeroImage] = useState<string>(CLOUDINARY_ASSETS.heroImage || '');
+  const [historyImage, setHistoryImage] = useState<string>(CLOUDINARY_ASSETS.historyImage || '');
+  const [engineImage, setEngineImage] = useState<string>(CLOUDINARY_ASSETS.engineImage || '');
+  const [versionImages, setVersionImages] = useState<Record<string, string>>(CLOUDINARY_ASSETS.versionImages);
+  const [ownerImages, setOwnerImages] = useState<Record<string, string>>(CLOUDINARY_ASSETS.ownerImages);
+  const [galleryImages, setGalleryImages] = useState<any[]>(CLOUDINARY_ASSETS.galleryImages.filter(img => img.url));
+
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentView, setCurrentView] = useState<'home' | string>('home');
-  const [dbStatus, setDbStatus] = useState<'checking' | 'online' | 'offline' | 'no_creds' | 'permission_denied' | 'table_missing'>('checking');
-  const [syncing, setSyncing] = useState(false);
-
-  const supabase = useMemo(() => {
-    let url = (process.env.SUPABASE_URL || '').trim();
-    const key = (process.env.SUPABASE_ANON_KEY || '').trim();
-    
-    if (!url || url === 'undefined' || !key || key === 'undefined') {
-      return null;
-    }
-
-    url = url.replace(/\/+$/, "");
-    
-    try {
-      new URL(url);
-      return createClient(url, key);
-    } catch (e) {
-      console.error("Supabase Client Init Error:", e);
-      return null;
-    }
-  }, []);
 
   const persistAsset = useCallback(async (key: string, data: any) => {
     await saveLocalAsset(key, data);
-    if (supabase) {
-      try {
-        await supabase.from('assets').upsert({ id: key, data: data });
-      } catch (e) {}
-    }
-  }, [supabase]);
+  }, []);
 
   const handleHeroUpdate = useCallback(async (base64: string) => {
     setHeroImage(base64);
@@ -138,37 +114,6 @@ const App: React.FC = () => {
     });
   }, [persistAsset]);
 
-  const generateAIImage = useCallback(async (prompt: string): Promise<string> => {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) return '';
-    try {
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: { parts: [{ text: prompt }] },
-      });
-      const parts = response.candidates?.[0]?.content?.parts || [];
-      for (const part of parts) if (part.inlineData) return `data:image/png;base64,${part.inlineData.data}`;
-      return '';
-    } catch (err) { return ''; }
-  }, []);
-
-  const autoFillMissingAssets = useCallback(async (h: string, hist: string, eng: string) => {
-    if (!process.env.API_KEY) return;
-    if (!h) { 
-      const img = await generateAIImage(HERO_PROMPT); 
-      if (img) { h = img; setHeroImage(img); await persistAsset('heroImage', img); } 
-    }
-    if (!hist) { 
-      const img = await generateAIImage(HISTORY_PROMPT); 
-      if (img) { hist = img; setHistoryImage(img); await persistAsset('historyImage', hist); } 
-    }
-    if (!eng) {
-      const img = await generateAIImage(ENGINE_PROMPT);
-      if (img) { eng = img; setEngineImage(img); await persistAsset('engineImage', eng); }
-    }
-  }, [generateAIImage, persistAsset]);
-
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('admin') === 'true') {
@@ -179,46 +124,11 @@ const App: React.FC = () => {
       setIsAdmin(sessionStorage.getItem(ADMIN_KEY) === 'true');
     }
 
+    // Local admin uploads (IndexedDB) take precedence over the Cloudinary defaults.
     const bootstrap = async () => {
-      let remoteMap: Record<string, any> = {};
-      
-      if (supabase) {
-        try {
-          const { data, error } = await supabase.from('assets').select('id, data').limit(50);
-          if (!error && data) {
-            setDbStatus('online');
-            data.forEach(row => {
-              if (row && row.id) remoteMap[row.id] = row.data;
-            });
-          } else if (error) {
-            console.error("Supabase diagnostic:", error);
-            if (error.code === '42P01') {
-              setDbStatus('table_missing');
-            } else if (error.code === '42501' || error.status === 401 || error.status === 403) {
-              setDbStatus('permission_denied');
-            } else {
-              setDbStatus('offline');
-            }
-          }
-        } catch (e) {
-          console.error("Supabase Exception:", e);
-          setDbStatus('offline');
-        }
-      } else {
-        setDbStatus('no_creds');
-      }
-
-      const loadAsset = async (key: string) => {
-        if (remoteMap[key]) { 
-          await saveLocalAsset(key, remoteMap[key]); 
-          return remoteMap[key]; 
-        }
-        return await getLocalAsset(key);
-      };
-
       try {
         const [h, hist, eng, vers, own, gal] = await Promise.all([
-          loadAsset('heroImage'), loadAsset('historyImage'), loadAsset('engineImage'), loadAsset('versionImages'), loadAsset('ownerImages'), loadAsset('galleryImages')
+          getLocalAsset('heroImage'), getLocalAsset('historyImage'), getLocalAsset('engineImage'), getLocalAsset('versionImages'), getLocalAsset('ownerImages'), getLocalAsset('galleryImages')
         ]);
 
         if (h) setHeroImage(h);
@@ -226,47 +136,13 @@ const App: React.FC = () => {
         if (eng) setEngineImage(eng);
         if (vers) setVersionImages(vers);
         if (own) setOwnerImages(own);
-        if (gal) setGalleryImages(Array.isArray(gal) ? gal : []);
-
-        autoFillMissingAssets(h, hist, eng);
+        if (gal && Array.isArray(gal) && gal.some(img => img?.url)) setGalleryImages(gal);
       } catch (e) {
         console.error("Bootstrap error:", e);
       }
     };
     bootstrap();
-  }, [supabase, autoFillMissingAssets]);
-
-  const forceSyncToCloud = async () => {
-    if (!supabase) {
-      alert("No Credentials: Set SUPABASE_URL and SUPABASE_ANON_KEY in Netlify.");
-      return;
-    }
-    
-    setSyncing(true);
-    try {
-      const keys = ['heroImage', 'historyImage', 'engineImage', 'versionImages', 'ownerImages', 'galleryImages'];
-      let uploadedCount = 0;
-      for (const key of keys) {
-        const localData = await getLocalAsset(key);
-        if (localData) {
-          const { error } = await supabase.from('assets').upsert({ id: key, data: localData }, { onConflict: 'id' });
-          if (error) throw error;
-          uploadedCount++;
-        }
-      }
-      setDbStatus('online');
-      alert(`Archive Successful: ${uploadedCount} components synchronized to the cloud repository.`);
-    } catch (err: any) {
-      console.error("Sync Failure:", err);
-      if (err.message?.includes('fetch')) {
-        alert("NETWORK ERROR: 'Failed to fetch'. \n\nThis is often caused by conflicting scripts in the HTML or browser security blocking the cross-origin request. Check the 'Maranello Archive Ops' panel for specific instructions.");
-      } else {
-        alert(`Sync Failed: ${err.message || "Unknown error"}`);
-      }
-    } finally {
-      setSyncing(false);
-    }
-  };
+  }, []);
 
   const selectedVersion = VERSIONS.find(v => v.id === currentView);
 
@@ -279,96 +155,21 @@ const App: React.FC = () => {
               <ShieldCheck size={18} />
               <span className="text-[11px] uppercase tracking-[0.2em] font-bold">Maranello Archive Ops</span>
             </div>
-            <div className={`w-2 h-2 rounded-full ${dbStatus === 'online' ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-rosso animate-pulse'}`}></div>
+            <div className="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_10px_#22c55e]"></div>
           </div>
           
           <div className="flex flex-col space-y-3">
             <div className="flex items-center space-x-2 text-[9px] uppercase tracking-widest bg-white/5 p-3 rounded border border-white/5">
-              <Database size={12} className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso'} />
+              <Cloud size={12} className="text-green-500" />
               <span className="text-white/40">Status:</span>
-              <span className={dbStatus === 'online' ? 'text-green-500' : 'text-rosso font-bold'}>
-                {dbStatus === 'online' ? 'CONNECTED' : dbStatus === 'permission_denied' ? 'RLS LOCKED' : dbStatus === 'table_missing' ? 'DB EMPTY' : dbStatus === 'no_creds' ? 'MISSING ENV' : 'UNREACHABLE'}
-              </span>
+              <span className="text-green-500 font-bold">CLOUDINARY LIVE</span>
             </div>
 
-            {dbStatus === 'table_missing' && (
-              <div className="bg-rosso/5 border border-rosso/20 p-4 space-y-4 rounded">
-                <div className="flex items-center text-rosso space-x-2">
-                  <Globe size={14} />
-                  <strong className="text-[9px] uppercase tracking-widest">Initialization Required</strong>
-                </div>
-                <div className="space-y-3">
-                  <p className="text-[8px] text-white/50 uppercase tracking-widest leading-relaxed">
-                    The 'assets' table was not found in your Supabase project. Run this in your SQL Editor:
-                  </p>
-                  <div className="bg-black/80 p-2 font-mono text-[7px] text-green-400 border border-white/10 flex flex-col space-y-2">
-                    <code className="block">CREATE TABLE assets (id text PRIMARY KEY, data jsonb);</code>
-                    <code className="block">ALTER TABLE assets ENABLE ROW LEVEL SECURITY;</code>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {dbStatus === 'offline' && (
-              <div className="bg-rosso/5 border border-rosso/20 p-4 space-y-4 rounded">
-                <div className="flex items-center text-rosso space-x-2">
-                  <AlertTriangle size={14} />
-                  <strong className="text-[9px] uppercase tracking-widest">Network Alert</strong>
-                </div>
-                <div className="space-y-3">
-                  <p className="text-[8px] text-white/50 uppercase tracking-widest leading-relaxed">
-                    The connection to Supabase is being blocked by your browser or network. 
-                  </p>
-                  <ul className="text-[7px] text-white/40 list-disc pl-4 space-y-1 uppercase tracking-widest">
-                    <li>Check if ad-blockers are disabled</li>
-                    <li>Verify SUPABASE_URL in Netlify has NO trailing slash</li>
-                    <li>Verify SUPABASE_ANON_KEY is correct</li>
-                  </ul>
-                  <p className="text-[8px] text-white/30 italic">Target: {process.env.SUPABASE_URL}</p>
-                </div>
-              </div>
-            )}
-
-            {dbStatus === 'permission_denied' && (
-              <div className="bg-rosso/10 border border-rosso/30 p-3 space-y-3 rounded-sm">
-                <div className="flex items-center text-rosso space-x-2">
-                  <AlertTriangle size={14} />
-                  <strong className="text-[9px] uppercase tracking-widest">Policy Error</strong>
-                </div>
-                <p className="text-[8px] text-white/70 uppercase tracking-widest leading-normal">
-                  Row Level Security (RLS) is active but no public policy exists.
-                </p>
-                <div className="bg-black/80 p-2 font-mono text-[7px] text-green-400 border border-white/10 flex items-start space-x-2 overflow-x-auto">
-                  <Terminal size={10} className="shrink-0 mt-0.5" />
-                  <code>CREATE POLICY "Public_Archive_Access" ON public.assets FOR ALL TO anon USING (true) WITH CHECK (true);</code>
-                </div>
-              </div>
-            )}
-
-            {dbStatus === 'no_creds' && (
-              <div className="bg-amber-500/10 border border-amber-500/30 p-3 text-[8px] text-amber-500 uppercase tracking-widest leading-relaxed rounded-sm">
-                <AlertTriangle size={14} className="mb-2" />
-                <strong>Variables Missing</strong>
-                <p className="mt-1 text-white/50">Ensure <code className="text-white">SUPABASE_URL</code> and <code className="text-white">SUPABASE_ANON_KEY</code> are saved in Netlify.</p>
-              </div>
-            )}
-            
-            {dbStatus === 'online' && (
-              <div className="bg-green-500/5 border border-green-500/20 p-2 text-[8px] text-green-500/80 uppercase tracking-widest flex items-start space-x-2 rounded-sm">
-                <div className="mt-1"><Info size={14} className="shrink-0" /></div>
-                <span>Repository Connected. Your changes are synchronized with the cloud vault.</span>
-              </div>
-            )}
+            <div className="bg-green-500/5 border border-green-500/20 p-2 text-[8px] text-green-500/80 uppercase tracking-widest flex items-start space-x-2 rounded-sm">
+              <div className="mt-1"><Info size={14} className="shrink-0" /></div>
+              <span>Images are delivered via the Cloudinary CDN. Local edits made here persist in this browser only — production images are managed in cloudinaryAssets.ts.</span>
+            </div>
           </div>
-
-          <button 
-            onClick={forceSyncToCloud}
-            disabled={syncing || !supabase}
-            className="flex items-center justify-center space-x-3 bg-white/5 hover:bg-rosso disabled:opacity-20 disabled:cursor-not-allowed text-white px-6 py-4 text-[10px] uppercase tracking-[0.3em] transition-all border border-white/10 group active:scale-95"
-          >
-            <RefreshCw size={12} className={`${syncing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-700'}`} />
-            <span className="font-bold">{syncing ? 'TRANSMITTING...' : 'COMMIT TO ARCHIVE'}</span>
-          </button>
         </div>
       )}
 
