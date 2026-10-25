@@ -124,7 +124,17 @@ const App: React.FC = () => {
       setIsAdmin(sessionStorage.getItem(ADMIN_KEY) === 'true');
     }
 
-    // Local admin uploads (IndexedDB) take precedence over the Cloudinary defaults.
+    // Local admin uploads (IndexedDB) may override the Cloudinary defaults,
+    // but only when they actually contain usable content — stale/empty
+    // records from previous sessions must never hide CDN images.
+    const mergeWith = (seed: Record<string, string>, stored: any): Record<string, string> => {
+      const merged = { ...seed };
+      if (stored && typeof stored === 'object') {
+        for (const [k, v] of Object.entries(stored)) if (v) merged[k] = v as string;
+      }
+      return merged;
+    };
+
     const bootstrap = async () => {
       try {
         const [h, hist, eng, vers, own, gal] = await Promise.all([
@@ -134,9 +144,15 @@ const App: React.FC = () => {
         if (h) setHeroImage(h);
         if (hist) setHistoryImage(hist);
         if (eng) setEngineImage(eng);
-        if (vers) setVersionImages(vers);
-        if (own) setOwnerImages(own);
-        if (gal && Array.isArray(gal) && gal.some(img => img?.url)) setGalleryImages(gal);
+        setVersionImages(mergeWith(CLOUDINARY_ASSETS.versionImages, vers));
+        setOwnerImages(mergeWith(CLOUDINARY_ASSETS.ownerImages, own));
+        // Gallery: keep Cloudinary slots, override only ids that have a local image
+        setGalleryImages(prev => {
+          const stored = Array.isArray(gal) ? gal.filter(img => img?.url) : [];
+          const byId = new Map(prev.map(img => [img.id, img.url]));
+          for (const img of stored) byId.set(img.id, img.url);
+          return [...byId.entries()].filter(([, url]) => url).map(([id, url]) => ({ id, url }));
+        });
       } catch (e) {
         console.error("Bootstrap error:", e);
       }
