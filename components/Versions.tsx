@@ -38,7 +38,7 @@ const Versions: React.FC<VersionsProps> = ({ images = {}, onNavigate, onUpdateIm
                   <img 
                     src={images[v.id]} 
                     alt={v.name} 
-                    className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-1000 animate-in fade-in"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000 animate-in fade-in"
                   />
                 ) : (
                   <div className="text-center opacity-20">

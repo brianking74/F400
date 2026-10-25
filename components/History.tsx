@@ -51,7 +51,7 @@ const History: React.FC<HistoryProps> = ({ customImage, onUpdateImage, isAdmin }
                   <img 
                     src={customImage} 
                     alt="Ferrari 400 Heritage" 
-                    className="w-full h-full object-contain animate-in fade-in duration-1000"
+                    className="w-full h-full object-cover animate-in fade-in duration-1000"
                   />
                 ) : (
                   <div className="text-center opacity-20">

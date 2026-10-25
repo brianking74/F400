@@ -68,7 +68,7 @@ const Gallery: React.FC<GalleryProps> = ({ images = [], onUpdateImage, isAdmin }
                     <img 
                       src={imageData.url} 
                       alt={prompt.caption}
-                      className="w-full h-full object-contain transition-all duration-1000 cursor-pointer"
+                      className="w-full h-full object-cover transition-all duration-1000 cursor-pointer"
                       onClick={() => setSelectedImageId(prompt.id)}
                     />
                     <div className="absolute inset-0 bg-rosso/0 group-hover:bg-rosso/5 transition-all duration-300 pointer-events-none"></div>
